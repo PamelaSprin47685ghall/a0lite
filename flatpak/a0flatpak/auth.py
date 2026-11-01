@@ -22,6 +22,11 @@ from urllib.parse import parse_qsl
 COOKIE = "a0key"
 UNAUTHORIZED_BODY = b"unauthorized\n"
 
+# The framework polls this path to decide that its own server came up, and it
+# cannot carry a key. It answers with a status only, so leaving it open costs
+# nothing; every other path is checked.
+EXEMPT_PATHS = frozenset({"/api/health"})
+
 
 def _key() -> str:
     return os.environ.get("A0_AUTH_KEY", "").strip()
@@ -76,6 +81,10 @@ class AuthMiddleware:
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] not in {"http", "websocket"}:
+            await self.app(scope, receive, send)
+            return
+
+        if scope.get("path") in EXEMPT_PATHS:
             await self.app(scope, receive, send)
             return
 
