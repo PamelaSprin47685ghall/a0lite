@@ -64,6 +64,10 @@ def apply() -> None:
 
     packages.apply()
 
+    from a0flatpak import health
+
+    health.apply()
+
     from a0flatpak import auth
 
     auth.apply()

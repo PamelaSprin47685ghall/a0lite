@@ -63,6 +63,7 @@ independent and idempotent:
 | `rfc_loop` | the remote function call loop, which would otherwise poll forever |
 | `base_dir` | the framework's write root, redirected into `$XDG_DATA_HOME` |
 | `auth` | nothing: it adds the key check the framework does not have |
+| `health` | nothing: it adds the `/api/health` route the startup probe polls |
 
 ## Not in this repository
 
