@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.agentzero.AgentZero</id>
+  <name>Agent Zero</name>
+  <summary>Agentic framework with a bundled local model backend</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      Agent Zero is an agentic framework that plans, writes code, runs commands
+      and keeps memory across sessions. This build bundles the Ollama runtime
+      and a model set, so the whole stack runs without Docker and without
+      downloading weights at first start.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.agentzero.AgentZero.desktop</launchable>
+  <url type="homepage">https://www.agent-zero.ai</url>
+  <releases>
+    <release version="1.0" date="2026-11-01"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

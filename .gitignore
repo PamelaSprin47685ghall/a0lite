@@ -1,0 +1,9 @@
+build/
+bundles/
+*.flatpak
+models-repo.tar
+models-repo/
+*.oci
+wps-office-mcp-deps.tar.gz
+__pycache__/
+*.pyc

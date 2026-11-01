@@ -1,0 +1,167 @@
+app-id: org.agentzero.AgentZero
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: agent-zero
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=home
+  - --filesystem=/run/udev:ro
+  - --env=OLLAMA_HOST=http://127.0.0.1:11434
+
+# Optional extensions. Each is a separate bundle that mounts into the paths
+# below when installed; the application runs without them.
+add-extensions:
+  # Ollama runtime, CPU kernels and model weights.
+  org.agentzero.AgentZero.Models:
+    directory: share/agent-zero/models
+    version: '1.0'
+    autodelete: false
+    no-autodownload: true
+  # CUDA kernels. They mount at their own path; the launcher adds that path to
+  # LD_LIBRARY_PATH, so Ollama finds them without nesting inside the Models
+  # extension (a nested extension point cannot be created at build time).
+  org.agentzero.AgentZero.Cuda:
+    directory: share/agent-zero/cuda
+    version: '12'
+    autodelete: false
+    no-autodownload: true
+
+modules:
+  - name: uv
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 uv /app/bin/uv
+      - install -Dm755 uvx /app/bin/uvx
+    sources:
+      - type: archive
+        url: https://github.com/astral-sh/uv/releases/download/0.13.6/uv-x86_64-unknown-linux-gnu.tar.gz
+        sha256: f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645
+
+  - name: python-gi-cairo
+    buildsystem: simple
+    build-commands:
+      # PyGObject and pycairo for CPython 3.14, taken from Debian forky.
+      # Xpra needs both to start; the payloads carry cp314 extensions.
+      - for deb in *.deb; do sh unpack-deb.sh "$deb" unpacked; done
+      - install -d /app/share/python-deps
+      - cp -a unpacked/usr/lib/python3/dist-packages/gi /app/share/python-deps/
+      - cp -a unpacked/usr/lib/python3/dist-packages/cairo /app/share/python-deps/
+      # PyGObject binds against gobject-introspection 2.0, which the runtime
+      # does not ship at a matching version.
+      - install -d /app/lib/gi
+      - cp -a unpacked/usr/lib/x86_64-linux-gnu/libgirepository-2.0.so.0* /app/lib/gi/
+    sources:
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/p/pygobject/python3-gi_3.58.1-1+b1_amd64.deb
+        sha256: 11e0a4923a8865952ebec54fffc2306c1be1b1d6e040706571b94acce1b96cca
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/p/pycairo/python3-cairo_1.29.1-1+b1_amd64.deb
+        sha256: 3e4c549683bfc10e9eba18fbe1bff84b06215f9692d61e54c3ffbccc55e658c0
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/g/glib2.0/libgirepository-2.0-0_2.90.1-2_amd64.deb
+        sha256: f28ddac45ee15b2ce8484ddfe02b35c5db9d268ccaf5b4e61ebafad0368bb37f
+      - type: file
+        path: unpack-deb.sh
+
+
+  - name: xpra
+    buildsystem: simple
+    build-commands:
+      # Debian payloads, unpacked into the app prefix. The C extensions are
+      # built for CPython 3.14, matching the interpreter installed above.
+      - for deb in *.deb; do sh unpack-deb.sh "$deb" unpacked; done
+      - install -d /app/share/python-deps
+      - cp -a unpacked/usr/lib/python3/dist-packages/xpra /app/share/python-deps/
+      - cp -a unpacked/usr/share/xpra /app/share/xpra
+      - install -Dm755 unpacked/usr/bin/xpra /app/bin/xpra
+      - find /app/share/xpra/www -name '*.gz' -delete
+      - find /app/share/xpra/www -name '*.br' -delete
+    sources:
+      - type: file
+        url: https://xpra.org/dists/forky/main/binary-amd64/xpra-common_6.5.5-r0-1_amd64.deb
+        sha256: 0ea743decedeece687c30155aebd93645032e34410966be19ecc80c520b76bef
+      - type: file
+        url: https://xpra.org/dists/forky/main/binary-amd64/xpra-server_6.5.5-r0-1_amd64.deb
+        sha256: 47eba2b7c19eeeb53b4fc2d5d3396e0218b0fc5c748c054cd5f665d27e8d8bd0
+      - type: file
+        url: https://xpra.org/dists/forky/main/binary-amd64/xpra-client_6.5.5-r0-1_amd64.deb
+        sha256: 48a32d3f37df3af9e01b54ca26c04829c9b984067d802b785a4b5d5d7362c135
+      - type: file
+        url: https://xpra.org/dists/forky/main/binary-amd64/xpra-x11_6.5.5-r0-1_amd64.deb
+        sha256: 4bacbd47fae770366cae1d8fb679937cd23c87dd297dc1eac12fb373ede6114d
+      - type: file
+        url: https://xpra.org/dists/forky/main/binary-amd64/xpra-html5-21-r1-1.deb
+        sha256: 64dd2cf7d8fb8e8a9dbc0cb3585de8934be6642fdee4f96d00e555d346b93b80
+      - type: file
+        path: unpack-deb.sh
+
+
+  - name: xvfb
+    buildsystem: simple
+    build-commands:
+      # Headless hosts have no X server; Xpra starts Xvfb instead. The two
+      # shared libraries are bundled because the runtime does not ship them.
+      - for deb in *.deb; do sh unpack-deb.sh "$deb" unpacked; done
+      - install -Dm755 unpacked/usr/bin/Xvfb /app/bin/Xvfb
+      - install -d /app/lib/xvfb
+      - cp -a unpacked/usr/lib/x86_64-linux-gnu/libselinux.so.1 /app/lib/xvfb/
+      - cp -a unpacked/usr/lib/x86_64-linux-gnu/libnettle.so.8 /app/lib/xvfb/
+      - cp -a unpacked/usr/lib/x86_64-linux-gnu/libXfont2.so.2* /app/lib/xvfb/
+      - cp -a unpacked/usr/lib/x86_64-linux-gnu/libfontenc.so.1* /app/lib/xvfb/
+      - cp -a unpacked/usr/lib/x86_64-linux-gnu/libaudit.so.1* /app/lib/xvfb/
+      - cp -a unpacked/usr/lib/x86_64-linux-gnu/libbz2.so.1* /app/lib/xvfb/
+      - cp -a unpacked/usr/lib/x86_64-linux-gnu/libcap-ng.so.0* /app/lib/xvfb/
+    sources:
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/x/xorg-server/xvfb_21.1.25-2_amd64.deb
+        sha256: 525408bfcb832ebaa2c3521356d831048ef18ecafc5225e40b1da6932b7208bb
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/libs/libselinux/libselinux1_3.11-2.1+b1_amd64.deb
+        sha256: 12c9fc5222e3f4e727793da05f37a5981aaa9cb8e455a8654cb78a15db66ae22
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/n/nettle/libnettle8t64_3.10.2-1+b1_amd64.deb
+        sha256: 213f9f0119cd63efc2529401547bad5f6d2cea4cae5d05cffdef22f19aabb30e
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/libx/libxfont/libxfont2_2.0.9-1_amd64.deb
+        sha256: a8305a9c661a6540cadffa22ee28fe332c55de3f99bf82db6007da92c84b5cda
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/libf/libfontenc/libfontenc1_1.1.8-1+b3_amd64.deb
+        sha256: 96a4c52474899e4a1467aefe7810dabf7bddc8d3e2260fd81ef02b81bfdf25f2
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/a/audit/libaudit1_4.1.2-1+b2_amd64.deb
+        sha256: 611fd00539154d6a18cf54249ca1780d82488ba2dbebd761a8b9d357882fc07f
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/b/bzip2/libbz2-1.0_1.0.8-6+b2_amd64.deb
+        sha256: 04c7528234a6a4a8a2c2470f1470a7a616d90904fe8cdccf4c2c655540cdc61f
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/libc/libcap-ng/libcap-ng0_0.9.6-1+b1_amd64.deb
+        sha256: e9aa6dd94b6773fea96e405a0e2c7b7f29da33838901ec686935706d39a42e85
+      - type: file
+        path: unpack-deb.sh
+
+
+  - name: agent-zero
+    buildsystem: simple
+    build-commands:
+      # The dir source is staged at the module root, so its contents are here.
+      - mkdir -p /app/share/agent-zero
+      - cp -a . /app/share/agent-zero/
+      - rm -rf /app/share/agent-zero/.git /app/share/agent-zero/tmp /app/share/agent-zero/.flatpak-builder
+      - install -d /app/share/agent-zero/models
+      - install -d /app/share/agent-zero/cuda
+      - install -Dm755 flatpak/agent-zero.sh /app/bin/agent-zero
+      - install -Dm644 flatpak/org.agentzero.AgentZero.desktop /app/share/applications/org.agentzero.AgentZero.desktop
+      - install -Dm644 flatpak/org.agentzero.AgentZero.metainfo.xml /app/share/metainfo/org.agentzero.AgentZero.metainfo.xml
+      - install -Dm644 flatpak/org.agentzero.AgentZero.png /app/share/icons/hicolor/256x256/apps/org.agentzero.AgentZero.png
+    sources:
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - tmp

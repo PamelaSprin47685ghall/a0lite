@@ -1,0 +1,82 @@
+app-id: org.agentzero.AgentZero.Wps
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+branch: '1.0'
+sdk: org.freedesktop.Sdk
+
+# Optional WPS Office control through the wps-skills MCP server.
+#
+# This extension ships the MCP server and the four skill packages from
+# https://github.com/lc2panda/wps-skills. It does not ship WPS Office itself:
+# the host must provide it, because the add-in writes into the user's WPS
+# profile and talks to the running WPS process.
+#
+# Two halves must both be present before tools work:
+#   1. this extension, which provides the MCP server on 127.0.0.1:58891
+#   2. the WPS add-in, installed into ~/.local/share/Kingsoft/wps/jsaddons/
+#      by flatpak/install-wps-addon.sh
+#
+# Register the server with Agent Zero using flatpak/wps-mcp-config.json, which
+# runs this extension through:
+#   flatpak run --command=wps-mcp org.agentzero.AgentZero.Wps
+#
+# Install with:
+#   flatpak install agent-zero-wps.flatpak
+# Remove with:
+#   flatpak uninstall org.agentzero.AgentZero.Wps
+
+command: wps-mcp
+
+separate-locales: false
+
+finish-args:
+  - --share=network
+  - --filesystem=~/.local/share/Kingsoft/wps/jsaddons:ro
+
+# This bundle is a runtime, not an extension of the application: it provides a
+# command the application invokes with
+#   flatpak run --command=wps-mcp org.agentzero.AgentZero.Wps
+
+modules:
+  - name: bun
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 bun ${FLATPAK_DEST}/bin/bun
+    sources:
+      - type: archive
+        url: https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64.zip
+        sha256: bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c
+        strip-components: 1
+
+  - name: wps-skills
+    buildsystem: simple
+    build-commands:
+      - install -d ${FLATPAK_DEST}/wps-skills
+      - cp -a wps-office-mcp ${FLATPAK_DEST}/wps-skills/
+      - cp -a skills ${FLATPAK_DEST}/wps-skills/
+      - cp -a wps-claude-assistant ${FLATPAK_DEST}/wps-skills/
+      - install -Dm755 wps-mcp.sh ${FLATPAK_DEST}/bin/wps-mcp
+    sources:
+      # A tarball pinned by checksum is used instead of a git source: it needs
+      # no git binary at build time and cannot drift.
+      - type: archive
+        url: https://github.com/lc2panda/wps-skills/archive/a82533662268b3245f93d8685bc45dffede048b6.tar.gz
+        sha256: b86b1f221952ef8fcdcac028e24b4ce472163c0079487264ec1a649c0cbf1761
+        strip-components: 1
+      - type: file
+        path: wps-mcp.sh
+
+  - name: wps-deps
+    buildsystem: simple
+    build-commands:
+      # The server's dependencies and compiled output ship as a pinned tarball:
+      # the build sandbox has no DNS, so nothing is fetched here.
+      - rm -rf ${FLATPAK_DEST}/wps-skills/wps-office-mcp/node_modules
+      - rm -rf ${FLATPAK_DEST}/wps-skills/wps-office-mcp/dist
+      - cp -a node_modules ${FLATPAK_DEST}/wps-skills/wps-office-mcp/node_modules
+      - cp -a dist ${FLATPAK_DEST}/wps-skills/wps-office-mcp/dist
+    sources:
+      - type: archive
+        path: wps-office-mcp-deps.tar.gz
+        sha256: ff53b5920ebd705b0f47e9ee8dcd04b0755cab1f937e515a0f1ee28ea547ec73
+        strip-components: 1

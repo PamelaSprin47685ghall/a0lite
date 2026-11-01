@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Agent Zero
+Comment=Agentic framework with a local model backend
+Exec=agent-zero
+Icon=org.agentzero.AgentZero
+Terminal=false
+Categories=Development;Utility;
+Keywords=agent;ai;assistant;
+StartupNotify=true

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "wps-office": {
+      "command": "/var/lib/flatpak/app/org.agentzero.AgentZero.Wps/current/active/files/bin/node",
+      "args": [
+        "/var/lib/flatpak/app/org.agentzero.AgentZero.Wps/current/active/files/wps-skills/wps-office-mcp/dist/index.js"
+      ]
+    }
+  }
+}

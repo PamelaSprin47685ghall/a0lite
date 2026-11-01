@@ -1,0 +1,90 @@
+app-id: org.agentzero.AgentZero.Models
+# The extension fills a point declared by the application, so the application
+# is its runtime rather than the platform.
+runtime: org.agentzero.AgentZero
+runtime-version: master
+branch: '1.0'
+sdk: org.freedesktop.Sdk/x86_64/25.08
+build-extension: true
+
+# The point is declared so the build knows where the payload lands; the
+# application declares the same point with the same directory.
+add-extensions:
+  org.agentzero.AgentZero.Models:
+    directory: share/agent-zero/models
+    version: '1.0'
+    autodelete: false
+    no-autodownload: true
+
+# Ollama runtime plus the model weights it serves.
+#
+# The main bundle ships neither, so it stays small and starts without a model
+# backend. This extension provides both halves at one extension point:
+#
+#   bin/ollama        the server binary
+#   lib/ollama/       CPU kernels (the Cuda extension adds cuda_v12/v13 here)
+#   models/           OLLAMA_MODELS, the content-addressed weight store
+#
+# Install with:
+#   flatpak install agent-zero-models.flatpak
+# Remove with:
+#   flatpak uninstall org.agentzero.AgentZero.Models
+
+separate-locales: false
+
+finish-args:
+  - --share=network
+
+# The extension mounts into the application, so the application must be
+# installed before this bundle is built. Its extension points are inherited
+# explicitly, which is what lets the build resolve the mount location.
+base: org.agentzero.AgentZero
+base-version: master
+inherit-extensions:
+  - org.agentzero.AgentZero.Models
+  - org.agentzero.AgentZero.Cuda
+
+modules:
+  - name: ollama
+    buildsystem: simple
+    build-commands:
+      # The archive is fetched as a plain file and unpacked here: flatpak's own
+      # archive handling flattens the `lib/ollama` tree for this tarball.
+      - zstd -dc ollama-linux-amd64.tar.zst | tar -xf -
+      - install -d ${FLATPAK_DEST}/bin
+      - cp -a bin/ollama ${FLATPAK_DEST}/bin/ollama
+      - install -d ${FLATPAK_DEST}/lib
+      - cp -a lib/ollama ${FLATPAK_DEST}/lib/ollama
+      - rm -rf ${FLATPAK_DEST}/lib/ollama/cuda_v12 ${FLATPAK_DEST}/lib/ollama/cuda_v13
+    sources:
+      - type: file
+        url: https://github.com/ollama/ollama/releases/download/v0.40.13/ollama-linux-amd64.tar.zst
+        sha256: c9490e0f520be21271d969e6703f012268b1d39f8b70dd58854e5bfef7a75bb6
+        dest-filename: ollama-linux-amd64.tar.zst
+
+  - name: models
+    buildsystem: simple
+    build-commands:
+      # Registry models: pull straight from the Ollama library into a staging
+      # directory that becomes OLLAMA_MODELS.
+      - export OLLAMA_MODELS=${FLATPAK_DEST}/models
+      - export OLLAMA_HOST=127.0.0.1:11435
+      - ${FLATPAK_DEST}/bin/ollama serve >/dev/null 2>&1 & sleep 8
+      - ${FLATPAK_DEST}/bin/ollama pull lfm3-omni:2b-q4_K_M
+      - ${FLATPAK_DEST}/bin/ollama pull qwen3-embedding:4b-q4_K_M
+
+      # OCR model: assembled from the published GGUF files.
+      - install -d /tmp/xiaomi-ocr
+      - cp Xiaomi-OCR-0.Q4_K_M.gguf Xiaomi-OCR-0.mmproj-bf16.gguf /tmp/xiaomi-ocr/
+      - printf 'FROM ./Xiaomi-OCR-0.Q4_K_M.gguf\nFROM ./Xiaomi-OCR-0.mmproj-bf16.gguf\nPARAMETER num_ctx 8192\nPARAMETER temperature 0\n' > /tmp/xiaomi-ocr/Modelfile
+      - cd /tmp/xiaomi-ocr && ${FLATPAK_DEST}/bin/ollama create xiaomi-ocr -f Modelfile
+
+      - pkill -f "ollama serve" || true
+      - rm -rf /tmp/xiaomi-ocr
+    sources:
+      - type: file
+        url: https://huggingface.co/prithivMLmods/Xiaomi-OCR-0-GGUF/resolve/main/Xiaomi-OCR-0.Q4_K_M.gguf
+        sha256: 1e497ff06b91a3d822c543066df3e9ef69c62c5423be09d739dfa1db55630d3a
+      - type: file
+        url: https://huggingface.co/prithivMLmods/Xiaomi-OCR-0-GGUF/resolve/main/Xiaomi-OCR-0.mmproj-bf16.gguf
+        sha256: 634d6bc95781ebf4a3f06570a59859fa5082d488db540fd474bc6b4061aec90e

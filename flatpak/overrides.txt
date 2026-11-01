@@ -1,0 +1,9 @@
+# Overrides for the Flatpak build.
+#
+# langsmith caps zstandard below 0.24, but no zstandard release in that range
+# has a CPython 3.14 wheel. The API used by langsmith is unchanged in 0.25.
+zstandard>=0.25
+
+# unstructured caps numpy below 2, but no numpy 1.x release has a CPython 3.14
+# wheel. The partitioners used here run on numpy 2.
+numpy>=2.1

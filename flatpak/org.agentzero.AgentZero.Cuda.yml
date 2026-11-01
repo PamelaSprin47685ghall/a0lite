@@ -1,0 +1,62 @@
+app-id: org.agentzero.AgentZero.Cuda
+# The extension fills a point declared by the application, so the application
+# is its runtime rather than the platform.
+runtime: org.agentzero.AgentZero
+runtime-version: master
+branch: '12'
+sdk: org.freedesktop.Sdk/x86_64/25.08
+build-extension: true
+
+# The point is declared so the build knows where the payload lands; the
+# application declares the same point with the same directory.
+add-extensions:
+  org.agentzero.AgentZero.Cuda:
+    directory: share/agent-zero/cuda
+    version: '12'
+    autodelete: false
+    no-autodownload: true
+
+# Optional CUDA runtime for the bundled Ollama server.
+#
+# The main bundle removes Ollama's CUDA directories to stay small. This
+# extension puts them back at the extension point declared by
+# org.agentzero.AgentZero.yml (directory lib/ollama), so Ollama discovers the
+# GPU when the extension is installed and falls back to CPU when it is not.
+#
+# Install with:
+#   flatpak install agent-zero-cuda.flatpak
+# Remove with:
+#   flatpak uninstall org.agentzero.AgentZero.Cuda
+
+separate-locales: false
+
+finish-args:
+  - --device=dri
+
+# The extension mounts into the application, so the application must be
+# installed before this bundle is built.
+base: org.agentzero.AgentZero
+base-version: master
+inherit-extensions:
+  - org.agentzero.AgentZero.Models
+  - org.agentzero.AgentZero.Cuda
+
+modules:
+  - name: ollama-cuda
+    buildsystem: simple
+    build-commands:
+      # The extension's files directory is bind-mounted onto the extension
+      # point, so the CUDA directories sit at its root. The archive is fetched
+      # as a plain file because flatpak's archive handling flattens this
+      # tarball's lib/ollama tree.
+      - zstd -dc ollama-linux-amd64.tar.zst | tar -xf -
+      - mkdir -p ${FLATPAK_DEST}
+      # Only the CUDA 12 kernels are shipped: they cover the drivers Ollama
+      # supports, and shipping both doubles the size of the extension.
+      - cp -a lib/ollama/cuda_v12 ${FLATPAK_DEST}/cuda_v12
+      - rm -rf ${FLATPAK_DEST}/bin ${FLATPAK_DEST}/cuda_v13
+    sources:
+      - type: file
+        url: https://github.com/ollama/ollama/releases/download/v0.40.13/ollama-linux-amd64.tar.zst
+        sha256: c9490e0f520be21271d969e6703f012268b1d39f8b70dd58854e5bfef7a75bb6
+        dest-filename: ollama-linux-amd64.tar.zst
