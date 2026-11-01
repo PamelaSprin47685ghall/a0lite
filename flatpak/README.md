@@ -35,8 +35,11 @@ flatpak-builder --user --install --force-clean state/wps   flatpak/org.agentzero
 
 Export the bundles:
 
+The refs live in the state directory's cache repository, which is what
+`flatpak-builder --state-dir` maintains:
+
 ```bash
-flatpak build-bundle ~/.local/share/flatpak/repo agent-zero.flatpak org.agentzero.AgentZero master
+flatpak build-bundle state/cache agent-zero.flatpak org.agentzero.AgentZero master
 flatpak build-bundle --runtime state/cache agent-zero-cuda.flatpak org.agentzero.AgentZero.Cuda 12
 flatpak build-bundle state/cache agent-zero-wps.flatpak org.agentzero.AgentZero.Wps 1.0
 ```
