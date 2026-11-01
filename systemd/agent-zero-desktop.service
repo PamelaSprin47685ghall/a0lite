@@ -1,0 +1,20 @@
+[Unit]
+Description=Agent Zero desktop session (Xpra on the host display)
+After=agent-zero.service display-manager.service
+Wants=agent-zero.service display-manager.service
+
+[Service]
+Type=oneshot
+User=kunweiz
+Group=kunweiz
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/kunweiz/.Xauthority
+ExecStart=/usr/local/bin/a0-desktop-start
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=graphical.target

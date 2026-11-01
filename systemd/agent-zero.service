@@ -1,0 +1,24 @@
+[Unit]
+Description=Agent Zero, Flatpak build, all inference through the bundled Ollama
+Documentation=https://github.com/PamelaSprin47685ghall/a0lite
+After=display-manager.service network-online.target
+Wants=display-manager.service network-online.target
+RequiresMountsFor=/home/kunweiz
+
+[Service]
+Type=simple
+User=kunweiz
+Group=kunweiz
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/kunweiz/.Xauthority
+WorkingDirectory=/home/kunweiz
+ExecStart=/usr/bin/flatpak run --user org.agentzero.AgentZero
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+
+[Install]
+WantedBy=graphical.target

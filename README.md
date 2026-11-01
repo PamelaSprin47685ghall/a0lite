@@ -43,6 +43,7 @@ Debian payloads whose C extensions are compiled for 3.14.
 | `flatpak/README.md` | packaging detail: runtime paths, extension points, per-feature notes |
 | `docs/setup/host-ollama.md` | host-side Ollama setup, models, endpoint contract |
 | `scripts/` | build, package and deploy |
+| `systemd/` | system units that keep the app and the desktop running across reboots |
 
 ### Runtime patches
 
@@ -132,6 +133,27 @@ scripts/deploy.sh user@host
 Copies the bundles, installs them per user, unpacks the models repository,
 registers it as a local remote, starts the application detached and waits for
 the UI.
+
+## Running as a service
+
+Two system units start at boot from `graphical.target`. They live in
+`/etc/systemd/system` and run as the desktop user, so they are ordinary system
+services rather than user units:
+
+| Unit | What it starts |
+| --- | --- |
+| `agent-zero.service` | the application, which starts Ollama itself |
+| `agent-zero-desktop.service` | the Xpra session on the host display |
+
+```bash
+sudo scripts/install-services.sh kunweiz
+```
+
+`agent-zero.service` waits for the display manager and the network but does not
+order itself after `graphical.target`: a unit that is both wanted by a target
+and ordered after it creates an ordering cycle, and systemd breaks the cycle by
+stopping the unit. `agent-zero-desktop.service` waits for the UI's health
+endpoint before it starts Xpra, because the two units start at the same time.
 
 ## Verified
 

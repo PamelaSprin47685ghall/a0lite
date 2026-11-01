@@ -1,0 +1,21 @@
+#!/bin/sh
+# Start the Agent Zero desktop session inside the application sandbox.
+# Idempotent: the plugin returns the existing session when one is running.
+# Waits for the Web UI first, so it also works when both units start at boot.
+for _ in $(seq 1 60); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:5080/api/health 2>/dev/null)
+    [ "$code" = 200 ] && break
+    sleep 2
+done
+
+exec flatpak run --user --command=sh org.agentzero.AgentZero -s <<'INNER'
+export LD_LIBRARY_PATH=/app/lib/gi:/app/lib/xvfb
+B="$HOME/.var/app/org.agentzero.AgentZero/data/agent-zero"
+export A0_BASE_DIR="$B"
+cd /app/share/agent-zero
+GIT_PYTHON_REFRESH=quiet PYTHONPATH=/app/share/agent-zero:/app/share/agent-zero/flatpak:/app/share/python-deps \
+  "$B/venv/bin/python" -c 'import a0flatpak; a0flatpak.apply()
+from plugins._desktop.helpers import desktop_session as ds
+r = ds.DesktopSessionManager().ensure_system_desktop()
+print("desktop:", r.get("available"), r.get("error") or "")'
+INNER
