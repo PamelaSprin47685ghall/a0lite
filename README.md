@@ -73,8 +73,14 @@ independent and idempotent:
 | WPS skills and add-in | the same pinned archive, fetched by the WPS manifest |
 | Xpra, Xvfb, Debian libraries | pinned by URL and `sha256` in the main manifest |
 
-Every remote input is pinned by `sha256` or commit. The one floating input is
-the Agent Zero checkout itself, which the main manifest consumes as `path: ..`.
+Every remote input is pinned by `sha256` or commit. Two things are not:
+
+* the Agent Zero checkout, which the main manifest consumes as `path: ..`;
+* `wps-office-mcp-deps.tar.gz`, whose bytes depend on the `bun` version and on
+  build timestamps. `scripts/build.sh` compares a copy against the manifest
+  pin, rebuilds it when it differs, and re-pins it in the build copy while
+  reporting the new checksum. The pin in this repository describes the artifact
+  that was actually shipped, not a value any rebuild can reproduce.
 
 ## Build
 

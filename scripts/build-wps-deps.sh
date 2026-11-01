@@ -38,8 +38,12 @@ bun install --frozen-lockfile
 bun run build
 
 # The manifest strips one component and expects node_modules/ and dist/ at the
-# module root.
-tar -czf "$OUT/wps-office-mcp-deps.tar.gz" node_modules dist
+# module root, so the archive needs exactly one top-level directory.
+STAGE=$(mktemp -d)
+mkdir -p "$STAGE/wpsdeps"
+cp -a node_modules dist "$STAGE/wpsdeps/"
+tar -czf "$OUT/wps-office-mcp-deps.tar.gz" -C "$STAGE" wpsdeps
+rm -rf "$STAGE"
 
 echo "written: $OUT/wps-office-mcp-deps.tar.gz"
 echo "sha256 : $(sha256sum "$OUT/wps-office-mcp-deps.tar.gz" | cut -d' ' -f1)"

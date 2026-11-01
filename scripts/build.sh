@@ -49,6 +49,17 @@ if [ ! -f "$DEPS" ]; then
     "$HERE/scripts/build-wps-deps.sh" "$A0_SRC/flatpak"
 fi
 
+# The tarball is not byte-reproducible: bun and the build embed versions and
+# timestamps. A regenerated copy therefore carries a different checksum, so the
+# pin is updated in the build copy and the change is reported. The repository
+# keeps the checksum of the artifact that was actually shipped.
+ACTUAL=$(sha256sum "$DEPS" | cut -d' ' -f1)
+if [ "$ACTUAL" != "$PIN" ]; then
+    echo "build: deps tarball is $ACTUAL, pin says $PIN"
+    echo "build: updating the pin in $A0_SRC/flatpak/org.agentzero.AgentZero.Wps.yml"
+    sed -i "s/$PIN/$ACTUAL/" "$A0_SRC/flatpak/org.agentzero.AgentZero.Wps.yml"
+fi
+
 cd "$A0_SRC"
 
 # The main bundle must be built first: the extensions fill points it declares.
