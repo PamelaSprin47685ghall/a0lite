@@ -27,11 +27,24 @@ mkdir -p "$OUT" "$STATE"
 
 # The layer is ours; the rest of the checkout is upstream.
 cp -a "$HERE/flatpak" "$A0_SRC/"
-[ -d "$HERE/docs" ] && cp -a "$HERE/docs" "$A0_SRC/"
+if [ -d "$HERE/docs" ]; then cp -a "$HERE/docs" "$A0_SRC/"; fi
 
 # wps-office-mcp-deps.tar.gz is not in this repository: it is third-party
-# output. Produce it first if it is missing.
-if [ ! -f "$A0_SRC/flatpak/wps-office-mcp-deps.tar.gz" ]; then
+# output, so it is produced here and checked against the manifest pin.
+DEPS=$A0_SRC/flatpak/wps-office-mcp-deps.tar.gz
+PIN=$(awk '/path: wps-office-mcp-deps.tar.gz$/ { getline; if ($1 == "sha256:") print $2 }' \
+        "$A0_SRC/flatpak/org.agentzero.AgentZero.Wps.yml")
+[ -n "$PIN" ] || { echo "build: no checksum pinned for the deps tarball" >&2; exit 1; }
+
+if [ -f "$DEPS" ]; then
+    ACTUAL=$(sha256sum "$DEPS" | cut -d' ' -f1)
+    if [ "$ACTUAL" != "$PIN" ]; then
+        echo "build: deps tarball does not match the pin, rebuilding it"
+        rm -f "$DEPS"
+    fi
+fi
+
+if [ ! -f "$DEPS" ]; then
     echo "build: producing wps-office-mcp-deps.tar.gz"
     "$HERE/scripts/build-wps-deps.sh" "$A0_SRC/flatpak"
 fi

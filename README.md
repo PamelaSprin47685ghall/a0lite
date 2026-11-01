@@ -36,7 +36,7 @@ Debian payloads whose C extensions are compiled for 3.14.
 | `flatpak/org.agentzero.AgentZero.Wps.yml` | optional WPS office MCP server |
 | `flatpak/agent-zero.sh` | launcher: seeds the writable tree, provisions the venv, starts Ollama and the Web UI |
 | `flatpak/a0flatpak/` | runtime patches, applied by the launcher before the app imports |
-| `flatpak/requirements-flatpak.txt` | upstream requirements with the inference stack removed |
+| `flatpak/requirements-flatpak.txt` | upstream requirements with the inference stack removed and two pins raised for CPython 3.14 |
 | `flatpak/overrides.txt` | two dependency caps relaxed for CPython 3.14 |
 | `flatpak/unpack-deb.sh` | `dpkg-deb` replacement; the SDK has no `dpkg-deb` |
 | `flatpak/install-wps-addon.sh` | installs the WPS add-in into the user's WPS profile |
