@@ -35,11 +35,8 @@ flatpak-builder --user --install --force-clean state/wps   flatpak/org.agentzero
 
 Export the bundles:
 
-The refs live in the state directory's cache repository, which is what
-`flatpak-builder --state-dir` maintains:
-
 ```bash
-flatpak build-bundle state/cache agent-zero.flatpak org.agentzero.AgentZero master
+flatpak build-bundle ~/.local/share/flatpak/repo agent-zero.flatpak org.agentzero.AgentZero master
 flatpak build-bundle --runtime state/cache agent-zero-cuda.flatpak org.agentzero.AgentZero.Cuda 12
 flatpak build-bundle state/cache agent-zero-wps.flatpak org.agentzero.AgentZero.Wps 1.0
 ```
@@ -62,7 +59,7 @@ flatpak build-init --type=extension --base=org.agentzero.AgentZero build \
 cp -a /path/to/stage/bin /path/to/stage/lib /path/to/stage/models build/files/
 flatpak build-finish \
     "--extension=org.agentzero.AgentZero.Models=directory=share/agent-zero/models" build
-flatpak build-export repo build 1.0   # branch must be explicit
+flatpak build-export repo build
 ```
 
 ## Distributing the models
@@ -120,7 +117,7 @@ compile is prebuilt and pinned by checksum:
 
 | Piece | Why it is prebuilt |
 | --- | --- |
-| `wps-office-mcp-deps.tar.gz` | `bun install` needs DNS; produced by `scripts/build-wps-deps.sh`, not stored in the repository |
+| `wps-office-mcp-deps.tar.gz` | `bun install` needs DNS |
 | `overrides.txt` | `langsmith` and `unstructured` cap `zstandard` and `numpy` below the last CPython 3.14 wheel |
 | `requirements-flatpak.txt` | every entry resolves to a wheel except two pure-Python sdists |
 
@@ -171,6 +168,42 @@ models/                    OLLAMA_MODELS, the weight store
 The Cuda extension mounts at `lib/ollama` inside that tree, so installing it
 adds kernels without touching the weights. Remove it to fall back to CPU.
 
+## Authentication
+
+`A0_AUTH_KEY` turns on the check that the framework lacks. It is applied inside
+the process, at `UiServerRuntime.build_asgi_app`, so it covers the Flask routes,
+the MCP and A2A mounts and the socket.io channel at once:
+
+```bash
+flatpak override --user --env=A0_AUTH_KEY=AP4XA org.agentzero.AgentZero
+```
+
+A request without the key gets `401`. The key is accepted as
+`Authorization: Bearer`, `X-API-Key`, the `a0key` cookie, or a one-time
+`?key=` that sets that cookie, so a browser only needs the query once.
+
+The desktop inherits the same key: the launcher passes it to Xpra as
+`XPRA_PASSWORD` and adds `--tcp-auth=env`, so Xpra validates logins itself.
+
+Ollama has no authentication of any kind and no hook to add one. An exposed
+Ollama port is open to anyone who reaches it; keep it behind a tunnel or a
+firewall, or leave it unexposed.
+
+## Exposing Ollama
+
+The launcher binds Ollama to `127.0.0.1:11434` and keeps `OLLAMA_HOST` pointing
+at that URL for its own clients. Ollama answers 403 to any request whose `Host`
+header is not loopback while it listens on loopback, so a TCP tunnel that
+forwards to it without rewriting the header cannot reach it. Bind it to the
+wildcard instead:
+
+```bash
+flatpak override --user --env=A0_OLLAMA_BIND=0.0.0.0:11434 org.agentzero.AgentZero
+```
+
+That opens 11434 to the network. Ollama has no authentication; expose it only
+behind a tunnel or a firewall.
+
 ## GPU
 
 CPU is the default. To use a GPU, install the Cuda extension and pass a device:
@@ -218,5 +251,6 @@ Then register the server with Agent Zero by pasting
 | `wps-mcp.sh` | WPS extension entry point |
 | `requirements-flatpak.txt` | framework dependencies |
 | `a0flatpak/` | runtime adaptations |
+| `plugin/` | built-in plugin: environment prompt and WPS skills |
 | `install-wps-addon.sh` | host-side add-in installer |
 | `wps-mcp-config.json` | MCP registration snippet |

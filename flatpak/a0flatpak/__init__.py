@@ -64,4 +64,8 @@ def apply() -> None:
 
     packages.apply()
 
+    from a0flatpak import auth
+
+    auth.apply()
+
     _APPLIED = True

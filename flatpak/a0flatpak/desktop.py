@@ -302,6 +302,9 @@ def apply() -> None:
                 if extra not in parts:
                     parts.insert(0, extra)
             env["LD_LIBRARY_PATH"] = ":".join(parts)
+            auth_key = os.environ.get("A0_AUTH_KEY", "").strip()
+            if auth_key:
+                env["XPRA_PASSWORD"] = auth_key
             xvfb = shutil.which("Xvfb") or BUNDLED_XVFB
             command = [
                 *interpreter, xpra,
@@ -315,6 +318,9 @@ def apply() -> None:
                 "--tray=no",
                 "--notifications=no",
                 f"--bind-tcp=127.0.0.1:{session.xpra_port}",
+                # Xpra authenticates on its own socket. The env module reads
+                # XPRA_PASSWORD, which the block below sets from A0_AUTH_KEY.
+                *(["--tcp-auth=env"] if os.environ.get("A0_AUTH_KEY", "").strip() else []),
                 f"--log-dir={session.profile_dir}",
                 "--log-file=xpra.log",
             ]

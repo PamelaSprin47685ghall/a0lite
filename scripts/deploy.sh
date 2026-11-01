@@ -30,6 +30,12 @@ if [ -f "$DIR/models-repo.tar" ]; then
               org.agentzero.AgentZero.Models"
 fi
 
+# The key turns on the request check inside the application and the matching
+# one in Xpra. Without it both stay open to anyone who reaches the tunnel.
+if [ -n "${A0_AUTH_KEY:-}" ]; then
+    $SSH "flatpak override --user --env=A0_AUTH_KEY=$A0_AUTH_KEY org.agentzero.AgentZero"
+fi
+
 # Kill and start in separate invocations, and escape the dot: the remote shell
 # command line contains the application id, so an unescaped `pkill -f` pattern
 # matches the shell itself and takes the session down.

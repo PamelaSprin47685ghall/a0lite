@@ -83,7 +83,12 @@ if [ -x "$OLLAMA_BIN" ] && [ -n "$(ls -A "$OLLAMA_MODELS" 2>/dev/null)" ]; then
     # the CUDA kernels; without it a GPU id has no effect.
     export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:--1}"
 
-    "$OLLAMA_BIN" serve >>"$LOG_DIR/ollama.log" 2>&1 &
+    # OLLAMA_HOST is the URL clients dial; the server bind is separate because
+    # Ollama refuses requests whose Host header is not loopback when it listens
+    # on loopback. Set A0_OLLAMA_BIND=0.0.0.0:11434 to reach it through a
+    # tunnel, and accept that the port is then open to the network.
+    OLLAMA_BIND="${A0_OLLAMA_BIND:-127.0.0.1:11434}"
+    OLLAMA_HOST="$OLLAMA_BIND" "$OLLAMA_BIN" serve >>"$LOG_DIR/ollama.log" 2>&1 &
     OLLAMA_PID=$!
     trap '[ -n "$OLLAMA_PID" ] && kill "$OLLAMA_PID" 2>/dev/null || true' EXIT
 
@@ -93,6 +98,13 @@ if [ -x "$OLLAMA_BIN" ] && [ -n "$(ls -A "$OLLAMA_MODELS" 2>/dev/null)" ]; then
         fi
         sleep 0.5
     done
+
+    # A stale process from an earlier run can hold the port. The readiness probe
+    # above cannot tell that apart from a healthy start, so check the child.
+    if ! kill -0 "$OLLAMA_PID" 2>/dev/null; then
+        echo "agent-zero: ollama exited during startup; see $LOG_DIR/ollama.log" >&2
+        echo "agent-zero: another process may already own $OLLAMA_BIND" >&2
+    fi
 else
     echo "agent-zero: no model backend at $MODELS_ROOT" >&2
     echo "agent-zero: install org.agentzero.AgentZero.Models for chat, OCR and speech" >&2

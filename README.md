@@ -35,7 +35,7 @@ Debian payloads whose C extensions are compiled for 3.14.
 | `flatpak/org.agentzero.AgentZero.Cuda.yml` | optional CUDA kernels, branch `12` |
 | `flatpak/org.agentzero.AgentZero.Wps.yml` | optional WPS office MCP server |
 | `flatpak/agent-zero.sh` | launcher: seeds the writable tree, provisions the venv, starts Ollama and the Web UI |
-| `flatpak/a0flatpak/` | runtime patches, applied by the launcher before the app imports |
+| `flatpak/a0flatpak/` | runtime patches, applied by the launcher before the app imports, including the request authentication that `A0_AUTH_KEY` enables |
 | `flatpak/requirements-flatpak.txt` | upstream requirements with the inference stack removed and two pins raised for CPython 3.14 |
 | `flatpak/overrides.txt` | two dependency caps relaxed for CPython 3.14 |
 | `flatpak/unpack-deb.sh` | `dpkg-deb` replacement; the SDK has no `dpkg-deb` |
@@ -62,6 +62,7 @@ independent and idempotent:
 | `packages` | package-manager installs, which cannot run in a read-only sandbox |
 | `rfc_loop` | the remote function call loop, which would otherwise poll forever |
 | `base_dir` | the framework's write root, redirected into `$XDG_DATA_HOME` |
+| `auth` | nothing: it adds the key check the framework does not have |
 
 ## Not in this repository
 
