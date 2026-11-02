@@ -48,15 +48,31 @@ def apply() -> None:
 
     _patch_current_task()
     _patch_sniffio()
+    _preload_pty_modules()
 
 class _TaskStub:
-    """Stand-in for the task that a re-entrant loop never sets."""
+    """Stand-in for the task that a re-entrant loop never sets.
+
+    ``asyncio.timeout`` asks it for a cancellation count and, when the deadline
+    passes, tries to cancel it. There is no task to cancel here, so the call is
+    accepted and the awaited work is left to finish on its own; without the
+    method the timeout handler raises AttributeError and the caller hangs.
+    """
 
     def cancelling(self) -> int:
         return 0
 
     def uncancel(self) -> int:
         return 0
+
+    def cancel(self, msg=None) -> bool:
+        return False
+
+    def cancelled(self) -> bool:
+        return False
+
+    def done(self) -> bool:
+        return False
 
     def get_name(self) -> str:
         return "a0flatpak-stub"
@@ -112,3 +128,18 @@ def _patch_sniffio() -> None:
 
     sniffio.current_async_library = current_async_library
     sniffio._a0flatpak_patched = True
+
+
+def _preload_pty_modules() -> None:
+    """Import the terminal modules before any worker thread can.
+
+    The code execution plugin imports ``pty`` when it starts a shell. When two
+    threads reach that import at the same time, one of them receives a
+    partially initialised module and ``pty.openpty`` is missing. Importing them
+    here, while the process is single-threaded, removes the race.
+    """
+    for name in ("pty", "tty", "termios", "fcntl"):
+        try:
+            __import__(name)
+        except ImportError:
+            pass

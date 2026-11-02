@@ -68,6 +68,10 @@ def apply() -> None:
 
     packages.apply()
 
+    from a0flatpak import code_exec
+
+    code_exec.apply()
+
     from a0flatpak import serve
 
     serve.apply()

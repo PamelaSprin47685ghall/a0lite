@@ -10,7 +10,14 @@ finish-args:
   - --socket=x11
   - --socket=pulseaudio
   - --device=dri
-  - --filesystem=home
+  # The agent works on the machine, not in a copy of it: its tools read and
+  # write the real filesystem with the user's own permissions.
+  - --filesystem=host
+  # host alone still leaves the runtime's own /etc and /usr in place; these
+  # two make the system files themselves readable, which is what tools that
+  # inspect the machine expect.
+  - --filesystem=host-etc:ro
+  - --filesystem=host-os:ro
   - --filesystem=/run/udev:ro
   - --env=OLLAMA_HOST=http://127.0.0.1:11434
 

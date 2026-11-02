@@ -38,6 +38,15 @@ if [ ! -f "$BASE_DIR/usr/.env" ] && [ -f "$APP_ROOT/usr/.env" ]; then
     cp -a "$APP_ROOT/usr/." "$BASE_DIR/usr/" 2>/dev/null || true
 fi
 
+# The framework's own environment prompt describes a Kali Docker container with
+# root. Replace it while it is still the shipped text, and leave a prompt the
+# user edited alone.
+ENV_PROMPT="$BASE_DIR/prompts/agent.system.main.environment.md"
+if [ -f "$APP_ROOT/flatpak/prompts/agent.system.main.environment.md" ] &&
+   { [ ! -f "$ENV_PROMPT" ] || grep -q "kali linux docker container" "$ENV_PROMPT"; }; then
+    cp -a "$APP_ROOT/flatpak/prompts/agent.system.main.environment.md" "$ENV_PROMPT"
+fi
+
 # Plugins and extensions are resolved against the writable root, and some of
 # them write state inside their own directory, so they are merged rather than
 # linked. The merge refreshes code from the bundle on every start and leaves
