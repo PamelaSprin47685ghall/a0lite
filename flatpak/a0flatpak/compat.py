@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import asyncio
 
+_STUB = None
+
 
 def apply() -> None:
     """Install the fallback once."""
@@ -28,7 +30,8 @@ def apply() -> None:
     original = asyncio.wait_for
 
     async def wait_for(fut, timeout=None):
-        if timeout is None or asyncio.current_task() is not None:
+        current = asyncio.current_task()
+        if timeout is None or (current is not None and current is not _STUB):
             return await original(fut, timeout)
 
         task = asyncio.ensure_future(fut)
@@ -90,12 +93,13 @@ def _patch_current_task() -> None:
     if getattr(tasks_module, "_a0flatpak_current_task", False):
         return
 
+    global _STUB
     original = tasks_module.current_task
-    stub = _TaskStub()
+    _STUB = _TaskStub()
 
     def current_task(loop=None):
         task = original(loop)
-        return task if task is not None else stub
+        return task if task is not None else _STUB
 
     tasks_module.current_task = current_task
     asyncio.current_task = current_task

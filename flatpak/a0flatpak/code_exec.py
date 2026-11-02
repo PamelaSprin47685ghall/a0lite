@@ -37,13 +37,20 @@ def apply() -> None:
         resolved = dict(config)
         resolved["ssh_enabled"] = False
 
-        # The local shell inside the sandbox prints a bare ``bash-5.2$`` prompt,
-        # which none of the shipped patterns match, so every command waited for
-        # its timeout before returning. This pattern matches that prompt and
-        # anything else ending in a shell sigil.
+        # The shipped patterns expect ``user@host:path$``. The shell in this
+        # sandbox prints a coloured ``[user@host ~]$``, which has no colon and
+        # carries escape sequences, so none of them matched and every command
+        # waited for its timeout before returning.
         patterns = str(resolved.get("prompt_patterns") or "")
-        extra = "[a-zA-Z0-9_.-]+[$#] ?$"
-        if extra not in patterns:
+        # The shipped patterns expect ``user@host:path$``. A shell in the
+        # sandbox prints a coloured ``[user@host ~]$`` without the colon, so
+        # none of them matched and every command waited for its timeout.
+        extra = "\n".join([
+            "[$#] ?$",
+            "[$#]\\x1b\\[[0-9;]*m ?$",
+            "\\]\\$\\x1b\\[[0-9;]*m ?$",
+        ])
+        if "[$#] ?$" not in patterns:
             resolved["prompt_patterns"] = (patterns + "\n" + extra).strip()
         return resolved
 

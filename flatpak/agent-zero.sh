@@ -38,6 +38,14 @@ if [ ! -f "$BASE_DIR/usr/.env" ] && [ -f "$APP_ROOT/usr/.env" ]; then
     cp -a "$APP_ROOT/usr/." "$BASE_DIR/usr/" 2>/dev/null || true
 fi
 
+# The framework still resolves a few paths against /a0, the directory its
+# container image used. Inside the sandbox / is writable but ephemeral, so point
+# that name at the persistent tree instead: files the agent creates there then
+# survive a restart and live on the real disk.
+if [ ! -e /a0 ] && [ -w / ]; then
+    ln -s "$BASE_DIR" /a0 2>/dev/null || true
+fi
+
 # The framework's own environment prompt describes a Kali Docker container with
 # root. Replace it while it is still the shipped text, and leave a prompt the
 # user edited alone.
