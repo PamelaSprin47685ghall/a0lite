@@ -63,6 +63,7 @@ independent and idempotent:
 | `packages` | package-manager installs, which cannot run in a read-only sandbox |
 | `rfc_loop` | the remote function call loop, which would otherwise poll forever |
 | `base_dir` | the framework's write root, redirected into `$XDG_DATA_HOME` |
+| `compat` | nothing: it keeps `asyncio` and `sniffio` usable under the framework's nested event loop |
 | `auth` | nothing: it adds the key check the framework does not have |
 | `health` | nothing: it adds the `/api/health` route the startup probe polls |
 | `serve` | nothing: it wraps the callable uvicorn is given, which is where the key check and the health route are attached |
