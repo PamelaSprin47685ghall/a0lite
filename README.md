@@ -65,6 +65,7 @@ independent and idempotent:
 | `base_dir` | the framework's write root, redirected into `$XDG_DATA_HOME` |
 | `auth` | nothing: it adds the key check the framework does not have |
 | `health` | nothing: it adds the `/api/health` route the startup probe polls |
+| `serve` | nothing: it wraps the callable uvicorn is given, which is where the key check and the health route are attached |
 
 ## Not in this repository
 

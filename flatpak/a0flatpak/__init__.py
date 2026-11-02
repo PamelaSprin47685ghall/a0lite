@@ -20,6 +20,10 @@ def apply() -> None:
     if _APPLIED:
         return
 
+    from a0flatpak import compat
+
+    compat.apply()
+
     from a0flatpak import base_dir
 
     base_dir.apply()
@@ -64,12 +68,8 @@ def apply() -> None:
 
     packages.apply()
 
-    from a0flatpak import health
+    from a0flatpak import serve
 
-    health.apply()
-
-    from a0flatpak import auth
-
-    auth.apply()
+    serve.apply()
 
     _APPLIED = True

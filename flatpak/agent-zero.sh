@@ -38,6 +38,17 @@ if [ ! -f "$BASE_DIR/usr/.env" ] && [ -f "$APP_ROOT/usr/.env" ]; then
     cp -a "$APP_ROOT/usr/." "$BASE_DIR/usr/" 2>/dev/null || true
 fi
 
+# Plugins and extensions are resolved against the writable root, and some of
+# them write state inside their own directory, so they are merged rather than
+# linked. The merge refreshes code from the bundle on every start and leaves
+# whatever the previous run wrote in place.
+for name in api plugins extensions; do
+    if [ -d "$APP_ROOT/$name" ]; then
+        mkdir -p "$BASE_DIR/$name"
+        cp -a "$APP_ROOT/$name/." "$BASE_DIR/$name/" 2>/dev/null || true
+    fi
+done
+
 export OLLAMA_HOST="${OLLAMA_HOST:-http://127.0.0.1:11434}"
 export OLLAMA_MODELS="$MODELS_ROOT/models"
 export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-2}"

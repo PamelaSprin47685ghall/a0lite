@@ -25,7 +25,9 @@ UNAUTHORIZED_BODY = b"unauthorized\n"
 # The framework polls this path to decide that its own server came up, and it
 # cannot carry a key. It answers with a status only, so leaving it open costs
 # nothing; every other path is checked.
-EXEMPT_PATHS = frozenset({"/api/health"})
+# The PWA manifest is fetched without credentials, so it can never carry the
+# cookie. It describes icons and colours and nothing else.
+EXEMPT_PATHS = frozenset({"/api/health", "/js/manifest.json"})
 
 
 def _key() -> str:
@@ -122,24 +124,3 @@ class AuthMiddleware:
             return
 
         await self.app(scope, receive, send)
-
-
-def apply() -> None:
-    """Wrap the assembled ASGI application when a key is configured."""
-    key = _key()
-    if not key:
-        return
-
-    from helpers import ui_server
-
-    runtime = ui_server.UiServerRuntime
-    if getattr(runtime, "_a0flatpak_auth_patched", False):
-        return
-
-    original = runtime.build_asgi_app
-
-    def build_asgi_app(self, startup_monitor):
-        return AuthMiddleware(original(self, startup_monitor), key)
-
-    runtime.build_asgi_app = build_asgi_app
-    runtime._a0flatpak_auth_patched = True
