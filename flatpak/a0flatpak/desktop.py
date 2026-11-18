@@ -14,9 +14,8 @@ that Flatpak mounts into the sandbox:
 * ``_allocate_endpoint_locked`` returns the host display number with a free
   port for Xpra.
 
-Only the system desktop is redirected. Document sessions keep the original
-private-display behaviour, which is what they need for isolated LibreOffice
-windows.
+Only the system desktop is redirected. Document windows open inside that same
+session, so they inherit the host display.
 """
 
 from __future__ import annotations
@@ -79,7 +78,7 @@ def _display_number(display: str) -> int:
         return 0
 
 
-def _patch_launcher_setup() -> None:
+def _patch_launcher_setup(desktop_session) -> None:
     """Skip the LibreOffice launcher preparation when LibreOffice is absent.
 
     ``_prepare_desktop_launchers`` writes LibreOffice desktop entries into the
@@ -87,8 +86,6 @@ def _patch_launcher_setup() -> None:
     On the host-display path the user's own desktop already provides those
     entries, so a missing LibreOffice is not fatal.
     """
-    from plugins._desktop.helpers import desktop_session
-
     manager = desktop_session.DesktopSessionManager
     if getattr(manager, "_a0flatpak_launchers_patched", False):
         return
@@ -107,43 +104,13 @@ def _patch_launcher_setup() -> None:
     manager._a0flatpak_launchers_patched = True
 
 
-def _patch_state_dirs() -> None:
-    """Move the desktop plugin state into the writable data directory.
-
-    ``desktop_session`` keeps its sessions under ``usr/plugins/_desktop``, which
-    lives inside the read-only application tree. The sandbox redirects it to the
-    user data directory.
-    """
-    import os
-    from pathlib import Path
-
-    from plugins._desktop.helpers import desktop_session
-
-    if getattr(desktop_session, "_a0flatpak_state_patched", False):
-        return
-
-    data_root = os.environ.get("A0_DATA_DIR") or os.path.join(
-        os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
-        "agent-zero",
-    )
-    state_dir = Path(data_root) / "plugins" / desktop_session.PLUGIN_NAME
-    state_dir.mkdir(parents=True, exist_ok=True)
-
-    desktop_session.STATE_DIR = state_dir
-    desktop_session.SESSION_DIR = state_dir / "sessions"
-    desktop_session.SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    desktop_session._a0flatpak_state_patched = True
-
-
-def _patch_desktop_status() -> None:
+def _patch_desktop_status(desktop_session) -> None:
     """Report the host-display requirements instead of the private-display ones.
 
     ``plugins._desktop.helpers.desktop_session.collect_desktop_status`` requires
     LibreOffice, the XFCE pieces and the X11 utilities that a private desktop
     session starts. The host-display path needs Xpra and its HTML5 client only.
     """
-    from plugins._desktop.helpers import desktop_session
-
     if getattr(desktop_session, "_a0flatpak_patched", False):
         return
 
@@ -211,6 +178,7 @@ def _patch_status_checks() -> None:
             missing.append("xpra-html5")
         healthy = not missing
         status["healthy"] = healthy
+        status["missing"] = missing
         status["state"] = "healthy" if healthy else "missing"
         status["message"] = (
             "Host desktop sharing is available."
@@ -223,15 +191,56 @@ def _patch_status_checks() -> None:
     virtual_desktop._a0flatpak_patched = True
 
 
-def apply() -> None:
-    """Redirect the system desktop session to the host display."""
-    from helpers import virtual_desktop
-    from plugins._desktop.helpers import desktop_session
+def _patch_resize_display() -> None:
+    """Accept a resize request when the bundle has no xrandr.
 
-    _patch_status_checks()
-    _patch_desktop_status()
-    _patch_state_dirs()
-    _patch_launcher_setup()
+    ``virtual_desktop.resize_display`` returns ``ok: false`` when ``xrandr`` is
+    missing, and ``VirtualDesktopGateway`` turns that into HTTP 400.  The
+    host-display path must not change the real monitor mode anyway, so report
+    the requested size as accepted but not applied.  The iframe scales its own
+    view; the dropped ``window_class``/``keys`` arguments only matter for the
+    private-display path, which this drop-in already bypasses.
+    """
+    from helpers import virtual_desktop
+
+    if getattr(virtual_desktop, "_a0flatpak_resize_patched", False):
+        return
+
+    original = virtual_desktop.resize_display
+
+    def resize_display(**kwargs: Any) -> dict[str, Any]:
+        if shutil.which("xrandr"):
+            return original(**kwargs)
+        width, height = virtual_desktop.normalize_size(
+            kwargs.get("width", 0),
+            kwargs.get("height", 0),
+            max_width=kwargs.get("max_width", virtual_desktop.MAX_WIDTH),
+            max_height=kwargs.get("max_height", virtual_desktop.MAX_HEIGHT),
+        )
+        return {
+            "ok": True,
+            "width": width,
+            "height": height,
+            "resized": False,
+            "note": "xrandr is not installed; the display keeps its mode.",
+        }
+
+    virtual_desktop.resize_display = resize_display
+    virtual_desktop._a0flatpak_resize_patched = True
+
+
+def _apply_desktop_session(desktop_session) -> None:
+    """Patch one live copy of the desktop plugin module."""
+    # Deliberately local: plugin_guard retries this function after a plugin
+    # purge, and helpers may not be importable yet when the guard first runs.
+    try:
+        from helpers import virtual_desktop
+    except ImportError as exc:
+        print(f"a0flatpak: desktop session patch skipped: {exc}", file=sys.stderr)
+        return
+
+    _patch_desktop_status(desktop_session)
+    _patch_launcher_setup(desktop_session)
 
     manager = desktop_session.DesktopSessionManager
     if getattr(manager, "_a0flatpak_patched", False):
@@ -274,7 +283,9 @@ def apply() -> None:
         session.profile_dir.mkdir(parents=True, exist_ok=True)
 
         host = _host_display()
-        session.display = _display_number(host) if host else 0
+        session.display = (
+            _display_number(host) if host else desktop_session.DISPLAY_BASE
+        )
         (session.profile_dir / "spawn-diag.txt").write_text(
             f"host={host!r} display={session.display} port={session.xpra_port}\n"
         )
@@ -290,7 +301,20 @@ def apply() -> None:
             if extra not in parts:
                 parts.insert(0, extra)
         env["PYTHONPATH"] = ":".join(parts)
-        env["PYTHONHOME"] = ""
+        # An empty PYTHONHOME happens to mean "unset" on CPython 3.14, but that
+        # is an implementation detail; removing the key is what "unset" means.
+        env.pop("PYTHONHOME", None)
+
+        # Xpra authenticates its own sockets with the same key as the Web UI:
+        # the `env` module reads XPRA_PASSWORD from this process environment,
+        # and --tcp-auth=env installs it for every TCP socket of the server
+        # (scripts/parsing.py:1920). The host-display shadow branch publishes
+        # the same 127.0.0.1 port as the headless one, so both paths get it.
+        auth_key = os.environ.get("A0_AUTH_KEY", "").strip()
+        if auth_key:
+            env["XPRA_PASSWORD"] = auth_key
+        xpra_auth = ["--tcp-auth=env"] if auth_key else []
+
         if host:
             env["DISPLAY"] = host
         else:
@@ -302,9 +326,17 @@ def apply() -> None:
                 if extra not in parts:
                     parts.insert(0, extra)
             env["LD_LIBRARY_PATH"] = ":".join(parts)
-            auth_key = os.environ.get("A0_AUTH_KEY", "").strip()
-            if auth_key:
-                env["XPRA_PASSWORD"] = auth_key
+            # --daemon=no keeps the server as a child we can wait for, but Xpra
+            # only opens --log-file when daemonizing (scripts/server.py:
+            # log_to_file = opts.daemon or XPRA_LOG_TO_FILE == "1"). Without
+            # this flag the command line promises a log file that never appears.
+            env["XPRA_LOG_TO_FILE"] = "1"
+            # start-desktop auto-starts `xpra desktop-greeter` when no start
+            # command exists (scripts/server.py). The bundle ships the HTML5
+            # client, not the GTK client (xpra.client.gui), so that child dies
+            # with `xpra main error` before it can draw anything. Do not start
+            # a component the bundle cannot run; the HTML5 client is the UI.
+            env["XPRA_DESKTOP_GREETER"] = "0"
             xvfb = shutil.which("Xvfb") or BUNDLED_XVFB
             command = [
                 *interpreter, xpra,
@@ -313,14 +345,11 @@ def apply() -> None:
                 f"--xvfb={xvfb} -screen 0 {desktop_session.MAX_SCREEN_WIDTH}x{desktop_session.MAX_SCREEN_HEIGHT}x24 -nolisten tcp -noreset",
                 "--daemon=no",
                 "--mdns=no",
-                "--mmap=no",
                 "--html=on",
                 "--tray=no",
                 "--notifications=no",
                 f"--bind-tcp=127.0.0.1:{session.xpra_port}",
-                # Xpra authenticates on its own socket. The env module reads
-                # XPRA_PASSWORD, which the block below sets from A0_AUTH_KEY.
-                *(["--tcp-auth=env"] if os.environ.get("A0_AUTH_KEY", "").strip() else []),
+                *xpra_auth,
                 f"--log-dir={session.profile_dir}",
                 "--log-file=xpra.log",
             ]
@@ -351,7 +380,25 @@ def apply() -> None:
         # and webp, which is what the HTML5 client renders.
         command = desktop_session._xpra_shadow_command(xpra, session)
         command = [arg for arg in command if not arg.startswith("--encoding=")]
-        command.insert(command.index("--speed=80") + 1, "--encoding=png")
+        anchor = command.index("--speed=80") + 1 if "--speed=80" in command else len(command)
+        command.insert(anchor, "--encoding=png")
+        # Xpra disables its mmap transport module when --mmap=no is given, and
+        # its own hello path then imports xpra.net.mmap.common to build the
+        # packet reader. That import sees the disabled module and dies with
+        # "No module named 'xpra.net.mmap.common'; 'xpra.net.mmap' is not a
+        # package", which aborts the handshake before any pixel is sent.
+        # Leaving mmap at its default lets the handshake complete.
+        #
+        # This is an upstream contradiction - disabling mmap is what triggers
+        # the mmap import - so the flag is dropped rather than replaced by
+        # anything of ours.
+        command = [arg for arg in command if arg != "--mmap=no"]
+        if xpra_auth:
+            # Xpra appends repeated --tcp-auth values (action="append"), and two
+            # `env` modules would challenge the client twice, so exactly one is
+            # kept: ours replaces any the upstream command may grow later.
+            command = [arg for arg in command if not arg.startswith("--tcp-auth=")]
+            command.extend(xpra_auth)
         # The xpra script uses whichever interpreter runs it. Only the
         # framework environment has the gi, cairo and Pillow modules Xpra needs
         # for an HTML5 session, so the interpreter is pinned explicitly.
@@ -359,6 +406,26 @@ def apply() -> None:
         probe = subprocess.run(
             [xpra, "--version"], capture_output=True, text=True, env=env, timeout=30
         )
+        check = subprocess.run(
+            [
+                *interpreter,
+                "-c",
+                "import xpra.net.mmap as m; assert getattr(m, '__path__', None), "
+                "'xpra.net.mmap is not a package'",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=60,
+        )
+        if check.returncode != 0:
+            # A pointer for the next layout change: this fails before the
+            # handshake, where the message is easy to attribute.
+            print(
+                "a0flatpak: xpra.net.mmap is not a package in this interpreter "
+                f"(rc={check.returncode}): {(check.stderr or check.stdout).strip()[-300:]}",
+                file=sys.stderr,
+            )
         (session.profile_dir / "xpra-cmd.txt").write_text(
             " ".join(command)
             + "\n\nVERSION rc=" + str(probe.returncode) + " out=" + probe.stdout.strip()[:80]
@@ -384,3 +451,19 @@ def apply() -> None:
     manager._session_env = _session_env
     manager._spawn_desktop_locked = _spawn_desktop_locked
     manager._a0flatpak_patched = True
+
+
+def apply() -> None:
+    """Redirect the system desktop session to the host display."""
+    from a0flatpak import plugin_guard
+
+    _patch_status_checks()
+    _patch_resize_display()
+    plugin_guard.register("_desktop", apply)
+    plugin_guard.register_module("_desktop.helpers.desktop_session", _apply_desktop_session)
+    sessions = plugin_guard.live_modules("_desktop.helpers.desktop_session")
+    if not sessions:
+        from plugins._desktop.helpers import desktop_session as fallback
+        sessions = [fallback]
+    for desktop_session in sessions:
+        _apply_desktop_session(desktop_session)

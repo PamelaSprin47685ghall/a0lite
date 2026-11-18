@@ -28,6 +28,14 @@ _NOOP_PLUGIN_HOOKS = (
     ("plugins._document_query.hooks", "install"),
 )
 
+# ``helpers.plugins.call_plugin_hook`` loads a hook file by path with a fresh
+# module object (``helpers/modules.py``), so patching the package module alone
+# leaves that copy untouched. The dispatcher is wrapped for the same pairs.
+_NOOP_CALL_HOOKS = frozenset(
+    (module_path.split(".")[1], attribute)
+    for module_path, attribute in _NOOP_PLUGIN_HOOKS
+)
+
 
 def _cleanup_result(**overrides: Any) -> dict[str, Any]:
     result: dict[str, Any] = {
@@ -62,6 +70,23 @@ def _patch_noop_hooks() -> None:
         setattr(module, attribute, noop)
 
 
+def _patch_call_plugin_hook() -> None:
+    from helpers import plugins
+
+    if getattr(plugins, "_a0flatpak_hooks_patched", False):
+        return
+
+    original = plugins.call_plugin_hook
+
+    def call_plugin_hook(plugin_name, hook_name, default=None, *args, **kwargs):
+        if (plugin_name, hook_name) in _NOOP_CALL_HOOKS:
+            return True
+        return original(plugin_name, hook_name, default, *args, **kwargs)
+
+    plugins.call_plugin_hook = call_plugin_hook
+    plugins._a0flatpak_hooks_patched = True
+
+
 def _patch_system_package_hooks() -> None:
     from plugins._desktop import hooks as desktop_hooks
     from plugins._office import hooks as office_hooks
@@ -91,5 +116,6 @@ def _patch_system_package_hooks() -> None:
 
 def apply() -> None:
     """Neutralise every package-manager and pip call made by plugin hooks."""
+    _patch_call_plugin_hook()
     _patch_noop_hooks()
     _patch_system_package_hooks()

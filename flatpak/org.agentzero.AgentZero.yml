@@ -13,12 +13,28 @@ finish-args:
   # The agent works on the machine, not in a copy of it: its tools read and
   # write the real filesystem with the user's own permissions.
   - --filesystem=host
+  # security-audit.md S3: mask credential directories. The entries below
+  # override the preceding --filesystem=host for these paths.
+  - --nofilesystem=~/.ssh
+  - --nofilesystem=~/.gnupg
+  - --nofilesystem=~/.pki
+  - --nofilesystem=~/.local/share/keyrings
+  - --nofilesystem=~/.config/gh
+  - --nofilesystem=~/.aws
+  - --nofilesystem=~/.docker
+  - --nofilesystem=~/.kube
   # host alone still leaves the runtime's own /etc and /usr in place; these
   # two make the system files themselves readable, which is what tools that
   # inspect the machine expect.
   - --filesystem=host-etc:ro
   - --filesystem=host-os:ro
   - --filesystem=/run/udev:ro
+  # flatpak/wps-mcp-config.json starts the WPS MCP server through
+  # `flatpak-spawn --host`, because Flatpak hides its own install tree from
+  # the sandbox. This talk permission is the minimum that allows it; it also
+  # lets the agent run commands on the host, which --filesystem=host already
+  # permits in effect.
+  - --talk-name=org.freedesktop.Flatpak
   - --env=OLLAMA_HOST=http://127.0.0.1:11434
 
 # Optional extensions. Each is a separate bundle that mounts into the paths
@@ -85,11 +101,52 @@ modules:
       - for deb in *.deb; do sh unpack-deb.sh "$deb" unpacked; done
       - install -d /app/share/python-deps
       - cp -a unpacked/usr/lib/python3/dist-packages/xpra /app/share/python-deps/
+      # xpra.net.mmap is a package from 6.5.5 on: xpra-common carries
+      # mmap/__init__.py, common.py, io.py and objects.py. The encoder imports
+      # xpra.net.mmap.common at module level (server/encoder/server.py), so the
+      # package has to stay importable or the server dies on start.
+      #
+      # A single-file xpra/net/mmap.py in the same slot - the layout 6.3 and
+      # earlier used - wins over a directory without __init__.py, and every
+      # later import then fails with "No module named 'xpra.net.mmap.common';
+      # 'xpra.net.mmap' is not a package". A directory with __init__.py wins
+      # over the single file, so the marker is what keeps the two layouts
+      # apart. Assert both halves here instead of discovering them at runtime.
+      - test -f /app/share/python-deps/xpra/net/mmap/__init__.py
+      - test ! -e /app/share/python-deps/xpra/net/mmap.py
       - cp -a unpacked/usr/share/xpra /app/share/xpra
       - install -Dm755 unpacked/usr/bin/xpra /app/bin/xpra
+      # The HTML5 client loads js/lib/jquery.js and js/lib/jquery-ui.js. In the
+      # Debian package both names are symlinks into /usr/share/javascript/,
+      # which the runtime does not ship: the links dangle, the browser gets 404
+      # for both, `$` is undefined and the desktop never renders. Replace the
+      # links with real files from the two libjs packages below.
+      - rm -f /app/share/xpra/www/js/lib/jquery.js /app/share/xpra/www/js/lib/jquery-ui.js
+      - install -Dm644 unpacked/usr/share/javascript/jquery/jquery.js /app/share/xpra/www/js/lib/jquery.js
+      - install -Dm644 unpacked/usr/share/javascript/jquery-ui/jquery-ui.js /app/share/xpra/www/js/lib/jquery-ui.js
+      # default-settings.txt is a second symlink into a Debian-only path
+      # (/etc/xpra/html5-client), requested by both index.html and connect.html.
+      # The file itself ships in this package under etc/, so copy the real one.
+      - rm -f /app/share/xpra/www/default-settings.txt
+      - install -Dm644 unpacked/etc/xpra/html5-client/default-settings.txt /app/share/xpra/www/default-settings.txt
+      # Fingerprint of the trees the launcher copies into the venv. The launcher
+      # compares it before overwriting them; mtimes cannot be used because the
+      # build normalises them to the epoch.
+      - find /app/share/python-deps/xpra /app/share/python-deps/gi /app/share/python-deps/cairo -type f -printf '%p %s\n' | sort | sha256sum | cut -d' ' -f1 > /app/share/python-deps/.a0-python-deps
       - find /app/share/xpra/www -name '*.gz' -delete
       - find /app/share/xpra/www -name '*.br' -delete
     sources:
+      # jQuery and jQuery UI as plain Debian packages, not the symlink targets
+      # the xpra package expects. 3.7.1 and 1.14.2 are the versions forky ships;
+      # the client uses `.on()` (1.7+) and the draggable/resizable widgets, and
+      # nothing removed in 3.x (`$.fn.size`, `.live`, `$.browser`), so these are
+      # the right generation rather than the 1.x the symlink name might suggest.
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/n/node-jquery/libjs-jquery_3.7.1+dfsg+~3.5.33-1_all.deb
+        sha256: 818d6383b5b8f33734f682076b02fe3e765af23251ff6bf2b47747a4484e19d3
+      - type: file
+        url: http://deb.debian.org/debian/pool/main/j/jqueryui/libjs-jquery-ui_1.14.2+dfsg-1_all.deb
+        sha256: b246c377c9db272164bd8c111e1e7f8955f1e493eb90cc0879c58be915388080
       - type: file
         url: https://xpra.org/dists/forky/main/binary-amd64/xpra-common_6.5.5-r0-1_amd64.deb
         sha256: 0ea743decedeece687c30155aebd93645032e34410966be19ecc80c520b76bef
@@ -159,7 +216,10 @@ modules:
       # The dir source is staged at the module root, so its contents are here.
       - mkdir -p /app/share/agent-zero
       - cp -a . /app/share/agent-zero/
+      - test -d /app/share/agent-zero/flatpak/a0flatpak
       - rm -rf /app/share/agent-zero/.git /app/share/agent-zero/tmp /app/share/agent-zero/.flatpak-builder
+      - install -Dm644 flatpak/build-info.env /app/share/agent-zero/.a0-build-info
+      - patch -p1 -d /app/share/agent-zero -i /app/share/agent-zero/flatpak/patches/flatpak-ui.patch
       - install -d /app/share/agent-zero/models
       - install -d /app/share/agent-zero/cuda
       - install -Dm755 flatpak/agent-zero.sh /app/bin/agent-zero
@@ -172,3 +232,7 @@ modules:
         skip:
           - .git
           - tmp
+          # The acceptance reports under docs/manual-acceptance are repository
+          # test records, not runtime assets, so they do not ship. docs/setup
+          # stays: host-ollama.md is documentation the user reads.
+          - docs/manual-acceptance

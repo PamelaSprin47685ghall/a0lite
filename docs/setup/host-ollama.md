@@ -6,7 +6,7 @@ build. Nothing here runs inside the bundle: the bundle only talks HTTP.
 
 ## Model set
 
-All three models use Q4_K_M quantization and fit an 8 GB GPU together.
+All three models use Q4_K_M quantization; their weights total 5.24 GB.
 
 | Role | Model tag | Size | Notes |
 | --- | --- | --- | --- |
@@ -86,10 +86,17 @@ The whole-page prompt needs no layout detection step.
 
 ## Unverified behaviour
 
-These items are untested and must be checked before relying on them.
+These items started untested. The notes below record what has since been
+measured and what remains open.
 
-1. **Audio capability of the Ollama package.** The `lfm3-omni` tag page lists
-   `Text, Image input` and does not list audio input. Verify both directions:
+1. **Audio capability of the Ollama package.** Measured: both directions work.
+   `POST /v1/audio/speech` returns RIFF/WAVE, `pcm_s16le`, 24 kHz, mono, 3.7 s
+   for a short Chinese sentence. `POST /v1/audio/transcriptions` transcribes it
+   back with similarity 0.9091, so the text is usable. Two defects remain:
+   Ollama writes `0xFFFFFFFF` into the RIFF and `data` size fields, which
+   `a0flatpak/speech.py` repairs in `_repair_wav`; and `language` is reported
+   as `english` for Chinese audio, so read `text` and ignore `language`.
+   The check commands:
 
    ```bash
    curl -sS http://127.0.0.1:11434/v1/audio/speech \
@@ -101,21 +108,24 @@ These items are untested and must be checked before relying on them.
      -F model=lfm3-omni:2b-q4_K_M -F file=@/tmp/tts.wav
    ```
 
-   If either call fails, serve the same GGUF with `llama serve` from
-   llama.cpp, which documents `/v1/realtime` and `/tts`.
+   If either call fails on another host, serve the same GGUF with
+   `llama serve` from llama.cpp, which documents `/v1/realtime` and `/tts`.
 
 2. **Accuracy of the Q4_K_M OCR conversion.** The Xiaomi model card states
    that community GGUF conversions were not evaluated and that the published
-   benchmark scores do not carry over. Compare Q4_K_M against BF16 on a
-   Chinese document before depending on it.
+   benchmark scores do not carry over. On this host the Q4_K_M conversion read
+   a two-line Chinese test image correctly in 3.5-6.3 s. No BF16 comparison was
+   run, so compare the two before depending on accuracy.
 
 3. **Chinese speech quality of `lfm3-omni`.** Chinese appears in the model's
-   speech language list, but no quality reference exists. Listen to a sample
-   before enabling TTS.
+   speech language list, but no quality reference exists and no subjective
+   listening test was run. Listen to a sample before enabling TTS.
 
 4. **Peak GPU memory with three models resident.** 5.24 GB of weights plus
-   KV cache and runtime buffers may exceed 8 GB. If Ollama evicts models on
-   every request, lower `OLLAMA_MAX_LOADED_MODELS` to 1.
+   KV cache and runtime buffers may exceed 8 GB. This host ran with
+   `OLLAMA_MAX_LOADED_MODELS=1`, so three models were never resident together
+   and the peak is unmeasured. If Ollama evicts models on every request, lower
+   `OLLAMA_MAX_LOADED_MODELS` to 1.
 
 ## Connecting the bundle
 

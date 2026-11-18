@@ -1,24 +1,27 @@
-"""Drive the host Chrome through stealth-browser.
+"""Drive the host Chrome with the plugin's own Patchright runtime.
 
 ``plugins/_browser`` prepares a Patchright Chromium download and launches it
 with ``executable_path``. A Flatpak build cannot download and unpack that
 browser at runtime, and the host already ships Chrome.
 
-This module wires the plugin's runtime to ``stealth_browser``, which drives the
-system Chrome over CDP through ``nodriver``. Two seams are patched:
+Two seams are patched:
 
 * ``plugins._browser.hooks.prepare_playwright_cache`` returns the system Chrome
   binary, so the plugin's readiness checks pass without downloading anything.
 * ``plugins._browser.hooks.install`` skips the dependency bootstrap that would
   call ``uv``.
 
-``stealth_browser.browser.BrowserPool.start`` is extended to forward the Chrome
-binary and the display environment to ``nodriver``, because ``nodriver``
-otherwise probes for a browser by name and starts headless.
+``plugins/_browser/helpers/runtime.py`` passes that binary to
+``chromium.launch_persistent_context(executable_path=...)``, so Patchright runs
+the host Chrome in place.
 
 Chrome is located through ``A0_BROWSER_CHROME`` first, then through the usual
-command names. When no Chrome is found the original behaviour returns, so the
-plugin reports its normal missing-binary error instead of crashing.
+command names, then through absolute paths the sandbox exposes. ``shutil.which``
+alone can never find a host browser: the sandbox keeps the runtime's ``/usr``,
+and the host's own root appears at ``/run/host/root`` (from
+``--filesystem=host-os``), with ``/opt`` also mounted at its real path by
+``--filesystem=host``. When no Chrome is found the original behaviour returns,
+so the plugin reports its normal missing-binary error instead of crashing.
 """
 
 from __future__ import annotations
@@ -40,18 +43,46 @@ _CHROME_NAMES = (
     "brave-browser",
 )
 
+# Names on PATH are not enough inside the sandbox: /usr belongs to the runtime,
+# so a host browser is reachable only through the mounts below. Order matters:
+# the host root mirror comes first because it is verified executable on the
+# target (`/run/host/root/opt/google/chrome/google-chrome`, rc=0, no missing
+# libraries), then the plain names, then the distro layouts.
+_CHROME_PATHS = (
+    "/run/host/root/opt/google/chrome/google-chrome",
+    "/run/host/root/usr/bin/google-chrome",
+    "/run/host/root/usr/bin/google-chrome-stable",
+    "/opt/google/chrome/google-chrome",
+    "/usr/lib/chromium/chromium",
+    "/usr/bin/chromium",
+    "/run/host/root/usr/lib/chromium/chromium",
+    "/usr/lib/chromium-browser/chromium-browser",
+    "/snap/bin/chromium",
+)
+
 
 def find_system_chrome() -> Path | None:
     """Return the host Chrome binary, or None when none is installed."""
     override = os.environ.get(CHROME_ENV, "").strip()
     if override:
         candidate = Path(override).expanduser()
-        return candidate if candidate.is_file() else None
+        # An override that exists but cannot be executed would only fail later,
+        # inside Patchright's spawn, as an EACCES with no hint about why. Report
+        # it as "not found" so the caller takes its normal no-host-browser path
+        # (its own discovery, then the downloaded build) instead of receiving a
+        # path that is guaranteed to fail.
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+        return None
 
     for name in _CHROME_NAMES:
         found = shutil.which(name)
         if found:
             return Path(found)
+
+    for candidate in _CHROME_PATHS:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return Path(candidate)
     return None
 
 
@@ -66,7 +97,21 @@ def _patch_plugin_hooks() -> None:
     def prepare_playwright_cache() -> dict[str, Any]:
         chrome = find_system_chrome()
         if chrome is None:
-            return original_prepare()
+            # Falling back to the bundled Chromium is a working degradation, so
+            # the call still succeeds. It must not be silent, though: without a
+            # line saying why the host browser was skipped, an operator whose
+            # A0_BROWSER_CHROME points at the wrong path sees a healthy tool and
+            # concludes their setup was honoured.
+            result = original_prepare()
+            warnings = list(result.get("warnings") or [])
+            warnings.append(
+                "No host Chrome was found (A0_BROWSER_CHROME, PATH and the known "
+                "locations are all empty or not executable); the bundled Chromium "
+                "download is used instead."
+            )
+            result["warnings"] = warnings
+            result["source"] = result.get("source") or "bundled"
+            return result
         return {
             "binary": str(chrome),
             "errors": [],
@@ -84,54 +129,6 @@ def _patch_plugin_hooks() -> None:
     hooks._a0flatpak_patched = True
 
 
-def _patch_stealth_browser() -> None:
-    """Forward the Chrome binary and display to nodriver."""
-    try:
-        from stealth_browser import browser as stealth_browser
-    except ImportError:
-        return
-
-    pool = stealth_browser.BrowserPool
-    if getattr(pool, "_a0flatpak_patched", False):
-        return
-
-    original_start = pool.start
-
-    async def start(self, proxy: Any = None) -> None:
-        if self._browser is not None:
-            return
-
-        chrome = find_system_chrome()
-        if chrome is None:
-            await original_start(self, proxy)
-            return
-
-        import nodriver
-
-        args = list(stealth_browser.ULTRA_STEALTH_CHROMIUM_ARGS)
-        if proxy:
-            host, port, _user, _password = proxy
-            args.append(f"--proxy-server=http://{host}:{port}")
-            args.append("--proxy-bypass-list=<-loopback>;127.0.0.1;localhost")
-            self._current_proxy = proxy
-        else:
-            self._current_proxy = None
-
-        headless = not os.environ.get("DISPLAY")
-        self._browser = await nodriver.start(
-            browser_executable_path=str(chrome),
-            browser_args=args,
-            headless=headless,
-        )
-
-        if proxy:
-            await self._setup_proxy_auth(proxy[2], proxy[3])
-
-    pool.start = start
-    pool._a0flatpak_patched = True
-
-
 def apply() -> None:
-    """Point the browser plugin at the host Chrome through stealth-browser."""
+    """Point the browser plugin at the host Chrome."""
     _patch_plugin_hooks()
-    _patch_stealth_browser()

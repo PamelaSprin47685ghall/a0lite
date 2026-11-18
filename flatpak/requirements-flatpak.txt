@@ -4,14 +4,15 @@
 # every model runs on the bundled Ollama server instead.
 #
 # Removed on purpose:
-#   faiss-cpu                  vector index replaced by an Ollama-backed store
+#   faiss-cpu                  vector index replaced by a numpy-backed shim
 #   sentence-transformers      embeddings come from Ollama /api/embed
 #   torch, torchvision         only needed by sentence-transformers and whisper
 #   triton, nvidia-*           GPU kernels for torch, unused without torch
 #   onnxruntime                TTS and OCR now run on Ollama
 #   kokoro, misaki, spacy      local TTS stack replaced by Ollama speech
 #   openai-whisper, numba      local STT stack replaced by Ollama transcription
-#   unstructured[all-docs]     document parsing moves to Ollama vision models
+#   unstructured[all-docs]     extras dropped; core partitioner stays, Ollama
+#                              covers images and scanned pages
 #
 # Keep the two-runtime note from the upstream image: this file installs the
 # framework runtime only. Task code shares the same interpreter.
@@ -22,10 +23,7 @@
 #
 # `unstructured` declares `numpy<2`, but no numpy 1.x wheel exists for cp314.
 # The bound is a compatibility guard, not a requirement: the partitioners this
-# build uses run on numpy 2, which flatpak/numpy-override.txt relaxes.
-# These two ship without wheels and build from a pure-Python sdist. They are
-# installed first, by themselves, so the wheel-only pass below never reaches a
-# source build.
+# build uses run on numpy 2, which flatpak/overrides.txt relaxes.
 flask-basicauth==0.2.0
 
 a2wsgi==1.10.8
@@ -53,9 +51,6 @@ markdown==3.7
 mcp==1.27.0
 paramiko==3.5.0
 patchright==1.61.2
-# Drives the host Chrome over CDP; replaces the downloaded Patchright build.
-stealth-browser==0.2.0
-nodriver>=0.48,<0.51
 pypdf==6.0.0
 python-dotenv==1.2.2
 pytz==2024.2

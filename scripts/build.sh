@@ -29,6 +29,28 @@ mkdir -p "$OUT" "$STATE"
 cp -a "$HERE/flatpak" "$A0_SRC/"
 if [ -d "$HERE/docs" ]; then cp -a "$HERE/docs" "$A0_SRC/"; fi
 
+# Build identity. The sandbox has no git binary and no .git, so the runtime
+# reports these values instead of inspecting the checkout. The describe runs
+# in this repository, not in the copy under $A0_SRC.
+#
+# Two distinct times are exported. A0_COMMIT_TIME is the HEAD commit's own
+# timestamp and is what the UI labels as a commit time; it must not change
+# when the same commit is rebuilt. A0_BUILD_TIME is the wall clock of this
+# build. Conflating them made the footer claim a commit time that moved
+# between rebuilds of identical source.
+BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+if COMMIT_TIME=$(TZ=UTC git -C "$HERE" log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd 2>/dev/null) && [ -n "$COMMIT_TIME" ]; then
+    :
+else
+    COMMIT_TIME=$BUILD_TIME
+    echo "build: warning: cannot read commit time from $HERE, falling back to build time" >&2
+fi
+
+printf 'A0_BUILD_VERSION=%s\nA0_BUILD_COMMIT=%s\nA0_COMMIT_TIME=%s\nA0_BUILD_TIME=%s\n' \
+    "$(git -C "$HERE" describe --tags --always --dirty 2>/dev/null || echo dev)" \
+    "$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo dev)" \
+    "$COMMIT_TIME" "$BUILD_TIME" > "$A0_SRC/flatpak/build-info.env"
+
 # wps-office-mcp-deps.tar.gz is not in this repository: it is third-party
 # output, so it is produced here and checked against the manifest pin.
 DEPS=$A0_SRC/flatpak/wps-office-mcp-deps.tar.gz
@@ -67,7 +89,7 @@ for manifest in org.agentzero.AgentZero org.agentzero.AgentZero.Cuda \
                 org.agentzero.AgentZero.Wps; do
     echo "=== $manifest"
     flatpak-builder --user --force-clean --disable-rofiles-fuse \
-        --state-dir="$STATE" --install-deps-from=flathub \
+        --state-dir="$STATE" --install-deps-from=flathub --repo="$CACHE" \
         "$STATE/build-${manifest##*.}" "flatpak/$manifest.yml"
 done
 

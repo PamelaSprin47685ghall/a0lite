@@ -1,9 +1,19 @@
 {
   "mcpServers": {
     "wps-office": {
-      "command": "/var/lib/flatpak/app/org.agentzero.AgentZero.Wps/current/active/files/bin/node",
+      "command": "/usr/bin/flatpak-spawn",
+      "env": {
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/flatpak/bus",
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "DISPLAY": ":0.0",
+        "XAUTHORITY": "/run/flatpak/Xauthority"
+      },
       "args": [
-        "/var/lib/flatpak/app/org.agentzero.AgentZero.Wps/current/active/files/wps-skills/wps-office-mcp/dist/index.js"
+        "--directory=/",
+        "--watch-bus",
+        "--host",
+        "/home/kunweiz/.local/share/flatpak/app/org.agentzero.AgentZero.Wps/current/active/files/bin/bun",
+        "/home/kunweiz/.local/share/flatpak/app/org.agentzero.AgentZero.Wps/current/active/files/wps-skills/wps-office-mcp/dist/index.js"
       ]
     }
   }

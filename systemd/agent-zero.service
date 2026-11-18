@@ -1,19 +1,16 @@
 [Unit]
 Description=Agent Zero, Flatpak build, all inference through the bundled Ollama
 Documentation=https://github.com/PamelaSprin47685ghall/a0lite
-After=display-manager.service network-online.target
-Wants=display-manager.service network-online.target
-RequiresMountsFor=/home/kunweiz
+# User-specific settings (User=, Group=, home, runtime dir) are written by
+# scripts/install-services.sh into agent-zero.service.d/10-user.conf. Refuse
+# to start as root when that drop-in is missing.
+AssertPathExists=/etc/systemd/system/agent-zero.service.d/10-user.conf
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=kunweiz
-Group=kunweiz
-Environment=XDG_RUNTIME_DIR=/run/user/1000
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/kunweiz/.Xauthority
-WorkingDirectory=/home/kunweiz
 ExecStart=/usr/bin/flatpak run --user org.agentzero.AgentZero
 Restart=always
 RestartSec=5
@@ -21,4 +18,4 @@ TimeoutStopSec=20
 KillMode=control-group
 
 [Install]
-WantedBy=graphical.target
+WantedBy=multi-user.target

@@ -1,20 +1,23 @@
 [Unit]
 Description=Agent Zero desktop session (Xpra on the host display)
+# Same fail-closed guard as agent-zero.service.
+AssertPathExists=/etc/systemd/system/agent-zero-desktop.service.d/10-user.conf
+# display-manager.service is an ordering hint only. On a headless boot it is
+# not in the transaction, so After= is ignored and a0-desktop-start falls back
+# to the bundled Xvfb after waiting for an X socket.
 After=agent-zero.service display-manager.service
-Wants=agent-zero.service display-manager.service
+Wants=agent-zero.service
 
 [Service]
 Type=oneshot
-User=kunweiz
-Group=kunweiz
-Environment=XDG_RUNTIME_DIR=/run/user/1000
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/kunweiz/.Xauthority
 ExecStart=/usr/local/bin/a0-desktop-start
 RemainAfterExit=yes
 Restart=on-failure
 RestartSec=15
+# The helper waits up to 120 s for the UI and 30 s for the X socket before
+# Xpra starts. The default 90 s would kill a cold first start.
+TimeoutStartSec=300
 
 [Install]
-WantedBy=graphical.target
+WantedBy=graphical.target multi-user.target

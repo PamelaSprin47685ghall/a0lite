@@ -9,12 +9,9 @@ receives.
 called with the final callable. Wrapping there covers the application, the MCP
 and A2A mounts and the socket.io channel, whoever assembled them.
 
-Two things happen at that boundary:
-
-* ``/api/health`` is registered on the runtime's Flask application, because the
-  startup probe polls it and this snapshot ships no such route;
-* the resulting ASGI application is wrapped in the key check when
-  ``A0_AUTH_KEY`` is set.
+The resulting ASGI application is wrapped in the key check when
+``A0_AUTH_KEY`` is set. The health route is left to the framework: ``api/health.py``
+already serves ``/api/health`` with authentication disabled.
 """
 
 from __future__ import annotations
@@ -34,16 +31,11 @@ def apply() -> None:
 
     def run_uvicorn_with_retries(*args, **kwargs):
         build = kwargs.get("build_asgi_app")
-        if build is not None:
-            from a0flatpak import auth, health
-
-            webapp = getattr(getattr(build, "__self__", None), "webapp", None)
-            if webapp is not None:
-                health.register(webapp)
+        if build is not None and key:
+            from a0flatpak import auth
 
             def build_wrapped(startup_monitor):
-                application = build(startup_monitor)
-                return auth.AuthMiddleware(application, key) if key else application
+                return auth.AuthMiddleware(build(startup_monitor), key)
 
             kwargs["build_asgi_app"] = build_wrapped
 

@@ -1,0 +1,110 @@
+--- a/webui/components/canvas/right-canvas.css
++++ b/webui/components/canvas/right-canvas.css
+@@ -400,3 +400,9 @@
+   outline: 2px solid var(--color-text-muted);
+   outline-offset: -2px;
+ }
++
++@media (max-width: 640px) {
++  .right-canvas-rail {
++    display: none !important;
++  }
++}
+--- a/webui/index.html
++++ b/webui/index.html
+@@ -222,7 +222,7 @@
+     <x-extension id="page-head"></x-extension>
+ </head>
+ 
+-<body class="dark-mode device-pointer" x-data>
++<body class="dark-mode device-pointer" x-data data-a0-flatpak="1">
+     <script>
+         try {
+             if (localStorage.getItem("darkMode") === "false") document.body.classList.replace("dark-mode", "light-mode")
+--- a/webui/components/settings/settings-store.js
++++ b/webui/components/settings/settings-store.js
+@@ -551,6 +551,7 @@
+   },
+ 
+   refreshUpdateStatus(force = false) {
++    if (document.body.dataset.a0Flatpak) return;
+     const selfUpdate = this.selfUpdate;
+     if (typeof selfUpdate?.refresh !== "function") return;
+     const now = Date.now();
+--- a/webui/components/settings/external/self-update-store.js
++++ b/webui/components/settings/external/self-update-store.js
+@@ -497,6 +497,7 @@
+   },
+ 
+   async refresh() {
++    if (document.body.dataset.a0Flatpak) return;
+     this.loading = true;
+     this.error = "";
+     try {
+--- a/plugins/_whisper_stt/default_config.yaml
++++ b/plugins/_whisper_stt/default_config.yaml
+@@ -1,5 +1,5 @@
+ model_size: base
+-language: en
++language: ""
+ message_mode: send
+ silence_threshold: 0.3
+ silence_duration: 1000
+--- a/plugins/_whisper_stt/helpers/migration.py
++++ b/plugins/_whisper_stt/helpers/migration.py
+@@ -10,7 +10,7 @@
+ LEGACY_SETTINGS_FILE = files.get_abs_path("usr/settings.json")
+ DEFAULT_CONFIG = {
+     "model_size": "base",
+-    "language": "en",
++    "language": "",
+     "message_mode": "send",
+     "silence_threshold": 0.3,
+     "silence_duration": 1000,
+--- a/plugins/_whisper_stt/helpers/runtime.py
++++ b/plugins/_whisper_stt/helpers/runtime.py
+@@ -25,7 +25,7 @@
+ PLUGIN_NAME = "_whisper_stt"
+ DEFAULT_CONFIG = {
+     "model_size": "base",
+-    "language": "en",
++    "language": "",
+     "message_mode": "send",
+     "silence_threshold": 0.3,
+     "silence_duration": 1000,
+--- a/plugins/_whisper_stt/webui/whisper-stt-store.js
++++ b/plugins/_whisper_stt/webui/whisper-stt-store.js
+@@ -54,7 +54,7 @@
+   enabled: false,
+   config: {
+     model_size: "base",
+-    language: "en",
++    language: "",
+     message_mode: "send",
+     silence_threshold: 0.3,
+     silence_duration: 1000,
+@@ -114,7 +114,7 @@
+       this.enabled = !!status?.enabled;
+       this.config = {
+         model_size: status?.config?.model_size || "base",
+-        language: status?.config?.language || "en",
++        language: status?.config?.language || "",
+         message_mode:
+           status?.config?.message_mode === "draft" ? "draft" : "send",
+         silence_threshold: Number(status?.config?.silence_threshold ?? 0.3),
+--- a/plugins/_whisper_stt/webui/config.html
++++ b/plugins/_whisper_stt/webui/config.html
+@@ -36,11 +36,11 @@
+           <div class="field-label">
+             <div class="field-title">Language</div>
+             <div class="field-description">
+-              Language hint forwarded to Whisper. Use <code>auto</code> to let Whisper detect it.
++              Language hint forwarded to Whisper. Leave blank or use <code>auto</code> to let Whisper detect it.
+             </div>
+           </div>
+           <div class="field-control">
+-            <input type="text" x-model="config.language" placeholder="en" />
++            <input type="text" x-model="config.language" placeholder="auto (blank = auto)" />
+           </div>
+         </div>
+ 

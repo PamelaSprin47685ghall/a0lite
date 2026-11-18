@@ -7,3 +7,6 @@ models-repo/
 wps-office-mcp-deps.tar.gz
 __pycache__/
 *.pyc
+
+# local agent eval cache
+.herd/

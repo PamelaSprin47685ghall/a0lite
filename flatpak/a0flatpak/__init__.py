@@ -28,6 +28,35 @@ def apply() -> None:
 
     base_dir.apply()
 
+    # Plugin patches are lost when Agent Zero purges the plugin namespace.
+    # Install the reusable guard before the modules that register patchers.
+    from a0flatpak import plugin_guard
+
+    plugin_guard.install_hooks()
+
+    # The bundle has no git metadata, so the version shown by the UI comes
+    # from the build identity that the launcher exports.
+    from a0flatpak import version
+
+    version.apply()
+
+    # The File Browser root is the whole machine.  Keep credential directories
+    # out of its list, read, download and delete paths.
+    from a0flatpak import sensitive_paths
+
+    sensitive_paths.apply()
+
+    from a0flatpak import chat_guard
+
+    chat_guard.apply()
+
+    # The adaptation modules below read their configuration when they are
+    # imported. Load ``usr/.env`` first, from the writable root that
+    # ``base_dir.apply()`` just installed, so those values are visible.
+    from helpers import dotenv
+
+    dotenv.load_dotenv()
+
     from a0flatpak import provider_urls
 
     provider_urls.apply()
@@ -71,6 +100,14 @@ def apply() -> None:
     from a0flatpak import code_exec
 
     code_exec.apply()
+
+    from a0flatpak import mcp_cache
+
+    mcp_cache.apply()
+
+    from a0flatpak import browser_guard
+
+    browser_guard.apply()
 
     from a0flatpak import serve
 

@@ -56,37 +56,109 @@ def apply() -> None:
 class _TaskStub:
     """Stand-in for the task that a re-entrant loop never sets.
 
-    ``asyncio.timeout`` asks it for a cancellation count and, when the deadline
-    passes, tries to cancel it. There is no task to cancel here, so the call is
-    accepted and the awaited work is left to finish on its own; without the
-    method the timeout handler raises AttributeError and the caller hangs.
+    ``nest_asyncio`` removes the running task from asyncio's bookkeeping before
+    it dispatches a callback. Code that is not a coroutine therefore asks for a
+    current task and gets none, while asyncio and anyio still require an object
+    with the task protocol. Each member below exists for a concrete reader:
+
+    * ``done``, ``_must_cancel`` and ``_fut_waiter`` are read by anyio's
+      ``CancelScope._deliver_cancellation`` before it decides whether to cancel
+      a task (anyio 4.15.1, ``_backends/_asyncio.py`` lines 596-607).
+    * ``cancelling``, ``uncancel`` and ``cancel`` are the timeout protocol used
+      by ``asyncio.timeout`` (Python 3.14, ``asyncio/timeouts.py`` lines 92,
+      111 and 128) and by ``CancelScope.__exit__`` (anyio line 500).
+    * ``get_coro`` and ``get_name`` are read by anyio's task introspection
+      (lines 355 and 2297-2299); a stub has no coroutine, so it reports no
+      coroutine and a fixed name.
+    * ``add_done_callback`` and ``remove_done_callback`` are used when anyio
+      treats the root task as a lifetime token (lines 2678, 2693 and 2838).
+
+    There is deliberately no generic ``__getattr__``: a missing attribute must
+    stay visible instead of turning into a made-up value.
     """
 
+    # anyio reads these two attributes directly. A stub has no coroutine that
+    # could hold a pending cancellation and awaits no future.
+    _must_cancel = False
+    _fut_waiter = None
+
+    # asyncio.Task exposes a parent in 3.14's task metadata. A stub has none.
+    parent = None
+
     def cancelling(self) -> int:
+        """Return the number of pending cancellations: none."""
         return 0
 
     def uncancel(self) -> int:
+        """Accept a cancellation-count decrement without changing state."""
         return 0
 
     def cancel(self, msg=None) -> bool:
+        """Refuse cancellation; there is no coroutine to interrupt."""
         return False
 
     def cancelled(self) -> bool:
         return False
 
     def done(self) -> bool:
+        # A stdlib TaskGroup treats a done parent as finished
+        # (asyncio/taskgroups.py:248). "No task" is not "finished".
         return False
 
     def get_name(self) -> str:
         return "a0flatpak-stub"
 
+    def set_name(self, value) -> None:
+        """Keep the fixed name; the singleton must not accumulate state."""
+
+    @property
+    def _loop(self):
+        """Return the running loop, which is the only loop a stub can reach.
+
+        anyio's ``WorkerThread`` reads ``root_task._loop`` and schedules its
+        callbacks there. A stub has no loop of its own, so the running loop is
+        the honest answer.
+        """
+        return asyncio.get_running_loop()
+
+    def get_loop(self):
+        return self._loop
+
+    def get_coro(self):
+        """Return no coroutine: the stub never ran one."""
+        return None
+
+    def get_parent(self):
+        return None
+
+    def get_stack(self, limit=None) -> list:
+        return []
+
+    def add_done_callback(self, callback, *, context=None) -> None:
+        """Silently ignore completion callbacks.
+
+        The stub never completes. Firing a callback now would announce an
+        event that did not happen; anyio uses this hook to stop its shared
+        thread pool. Storing it would retain the callback forever.
+        """
+
+    def remove_done_callback(self, callback) -> int:
+        return 0
+
+    def __repr__(self) -> str:
+        return "a0flatpak-stub"
+
 
 def _patch_current_task() -> None:
-    """Report a task while the loop runs, even when nest_asyncio runs none.
+    """Report the real task when the loop has one, a stub when it has none.
 
-    Two callers depend on it: ``asyncio.timeout`` asks the current task for its
-    cancellation count, and ``sniffio`` uses the same check to name the async
-    library for httpx. Both raise when the answer is "no task".
+    ``nest_asyncio`` swaps in the pure-Python ``Task``. That task publishes
+    itself in ``asyncio.tasks._current_tasks``, but ``asyncio.current_task``
+    was bound to the C implementation, which reads the C module's registry.
+    The result is ``None`` even while a real coroutine runs, and anyio then
+    stores the stub as a cancel-scope host. The second lookup recovers the task
+    that the pure-Python task published; only callbacks dispatched with no task
+    at all reach the stub.
     """
     import asyncio.tasks as tasks_module
 
@@ -99,6 +171,15 @@ def _patch_current_task() -> None:
 
     def current_task(loop=None):
         task = original(loop)
+        if task is not None:
+            return task
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return _STUB
+        current_tasks = getattr(tasks_module, "_current_tasks", None)
+        task = current_tasks.get(loop) if current_tasks is not None else None
         return task if task is not None else _STUB
 
     tasks_module.current_task = current_task
