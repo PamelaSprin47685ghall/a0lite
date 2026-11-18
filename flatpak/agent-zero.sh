@@ -147,6 +147,10 @@ done
 
 export OLLAMA_HOST="${OLLAMA_HOST:-http://127.0.0.1:11434}"
 export OLLAMA_MODELS="$MODELS_ROOT/models"
+# Two models stay resident on purpose: OCR, embeddings and speech each use a
+# different model, and MAX_LOADED_MODELS=1 made them evict and reload each
+# other (docs/manual-acceptance/a0lite-deploy/probe-pdf.md).  Operators with
+# less VRAM can lower it; nothing here overrides a value already set.
 export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-2}"
 export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
 # These four are fallbacks, not overrides. ``a0flatpak`` calls
@@ -270,6 +274,17 @@ if [ -x "$OLLAMA_BIN" ] && [ -n "$(ls -A "$OLLAMA_MODELS" 2>/dev/null)" ]; then
         : "${GGML_VK_VISIBLE_DEVICES:=0}"
         export OLLAMA_IGPU_ENABLE GGML_VK_VISIBLE_DEVICES
     fi
+
+    # Vulkan tuning measured on Radeon 780M; see vulkan-tuning.md.  These
+    # trade VRAM, not speed: context 4096 saves 349 MB, and flash attention
+    # is the prerequisite for KV cache quantization (q8_0 saves 6 MB).
+    # Speed stays within noise (65.85 vs 65.15 tps).  num_batch has no
+    # environment variable in Ollama 0.40, so it is not set here; a request
+    # can pass 512 to save another 320 MB.
+    : "${OLLAMA_CONTEXT_LENGTH:=4096}"
+    : "${OLLAMA_FLASH_ATTENTION:=1}"
+    : "${OLLAMA_KV_CACHE_TYPE:=q8_0}"
+    export OLLAMA_CONTEXT_LENGTH OLLAMA_FLASH_ATTENTION OLLAMA_KV_CACHE_TYPE
 
     # OLLAMA_HOST is the URL clients dial; the server bind is separate because
     # Ollama refuses requests whose Host header is not loopback when it listens
