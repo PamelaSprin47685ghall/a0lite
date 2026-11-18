@@ -55,3 +55,12 @@ Vulkan 1.81x (Radeon 780M, size_vram 1.82/7.25 GiB, tps 32.27 -> 58.36)
 3. `git status --short` 复核：无 `??`，无 `.herd/`、`bundles/`、`build/`
 4. 将 §5 正文存为 `/tmp/a0lite-commit.txt`，`git commit -F /tmp/a0lite-commit.txt`
 5. `git push origin main`，再核对 `git rev-parse HEAD @{u}` 相等
+
+## §7 执行记录
+
+- `.gitignore` 末尾追加 3 行（空行 + `# local agent eval cache` + `.herd/`）；`git check-ignore -v .herd/` → `.gitignore:12:.herd/`，输出 `HERD_IGNORED`。
+- 显式 `git add flatpak/ scripts/ systemd/ docs/manual-acceptance/a0lite-deploy/ docs/setup/host-ollama.md README.md .gitignore`：暂存 127 个文件（含 `health.py` 删除）；`grep -E '^(bundles|build)/'` → `CLEAN`，`.herd` → `NO_HERD`，最大文件 196 K（`mcp-tools-250.json`）。
+- 基线外两个文件已确认属于 v23：`flatpak/a0flatpak/chat_guard.py`（新，D59/D60 空消息 400）与 `flatpak/a0flatpak/embeddings.py`（+80/−2，D62 零向量），一并提交。
+- commit `23b3eab`：`127 files +40285 -374`；首行 `Give the Flatpak real AMD Vulkan, hard boundaries, and self-healing patches`。
+- push：`058582f..23b3eab  main -> main`，无拒绝、无 force、无 amend。
+- 验证：`git status --short` 0 行；`git ls-remote --heads origin main` = `23b3eabf9ec1efe3608a467ceff408147056c06f`，与本地 `HEAD`、`@{u}` 三者相同。
