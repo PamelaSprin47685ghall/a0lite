@@ -75,6 +75,18 @@ if [ ! -e "$BASE_DIR/usr/.gitkeep" ] && [ -d "$APP_ROOT/usr" ]; then
     cp -a --no-preserve=timestamps "$APP_ROOT/usr/." "$BASE_DIR/usr/" 2>/dev/null || true
 fi
 
+# The framework's own tools live at the bundle root, and its resolver looks for
+# them under the writable root: `files.get_abs_path("tools", name)`. Without
+# this copy the lookup misses, `Agent.get_tool` falls back to tools/unknown.py,
+# and the model is told the tool does not exist even though the matching
+# prompt file was seeded. Copy on every start, like prompts: a tool an upgrade
+# changed must reach the writable tree, and the framework has no fallback to
+# the read-only copy.
+if [ -d "$APP_ROOT/tools" ]; then
+    mkdir -p "$BASE_DIR/tools"
+    cp -a --no-preserve=timestamps "$APP_ROOT/tools/." "$BASE_DIR/tools/" 2>/dev/null || true
+fi
+
 # The framework still resolves a few paths against /a0, the directory its
 # container image used. Inside the sandbox / is writable but ephemeral, so point
 # that name at the persistent tree instead: files the agent creates there then
@@ -141,7 +153,7 @@ for stale in components/modals/scheduler components/sidebar/tasks \
     rm -rf "$BASE_DIR/webui/$stale"
 done
 
-for name in prompts conf agents knowledge instruments usr api plugins extensions webui; do
+for name in prompts conf agents knowledge instruments tools usr api plugins extensions webui; do
     refresh_dir_mtime "$BASE_DIR/$name"
 done
 

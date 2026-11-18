@@ -44,7 +44,10 @@ def apply() -> None:
     # The framework reads configuration and prompt files relative to this root,
     # so the writable tree carries a seeded copy of the bundle's layout.
     source_root = "/app/share/agent-zero"
-    for name in ("conf", "agents", "knowledge", "instruments", "usr"):
+    # ``tools`` belongs here for the same reason as the others: the resolver
+    # searches it under this root, and a missing copy turns every top-level
+    # tool into "tool not found" while its prompt still advertises it.
+    for name in ("conf", "agents", "knowledge", "instruments", "tools", "usr"):
         source = os.path.join(source_root, name)
         target = os.path.join(root, name)
         if os.path.isdir(source) and not os.path.isdir(target):
