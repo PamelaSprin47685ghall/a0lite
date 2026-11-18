@@ -278,9 +278,9 @@ if [ -x "$OLLAMA_BIN" ] && [ -n "$(ls -A "$OLLAMA_MODELS" 2>/dev/null)" ]; then
     # Vulkan tuning measured on Radeon 780M; see vulkan-tuning.md.  These
     # trade VRAM, not speed: context 4096 saves 349 MB, and flash attention
     # is the prerequisite for KV cache quantization (q8_0 saves 6 MB).
-    # Speed stays within noise (65.85 vs 65.15 tps).  num_batch has no
-    # environment variable in Ollama 0.40, so it is not set here; a request
-    # can pass 512 to save another 320 MB.
+    # Speed stays within noise: no setting here moved tps by more than ~1%.
+    # num_batch has no environment variable in Ollama 0.40, so it is not set
+    # here; a request can pass 512 to save another 320 MB.
     : "${OLLAMA_CONTEXT_LENGTH:=4096}"
     : "${OLLAMA_FLASH_ATTENTION:=1}"
     : "${OLLAMA_KV_CACHE_TYPE:=q8_0}"
