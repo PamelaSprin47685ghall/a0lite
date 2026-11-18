@@ -47,3 +47,8 @@
 ## §6 结论
 
 v24 **可以作基线**：显存降 18%，速度持平，功能与回归全过。`MAX_LOADED_MODELS=2` 保持不变（有意为之，见 §1）。`num_batch=512` 仍可按请求传，留给后续统一客户端时再做。
+
+## §7 提交记录
+
+提交 `b446c4b` “Tune Vulkan for VRAM, not throughput”（4 files, +222）：`flatpak/agent-zero.sh` 与 `vulkan-tuning.md`、`vulkan-knobs.md`、本文。
+`git push origin main` → `8a8559b..b446c4b  main -> main`；远端 `refs/heads/main` 与本地 HEAD 同为 `b446c4bfad738957c5bdf2fc9eaf36d39055e313`。
